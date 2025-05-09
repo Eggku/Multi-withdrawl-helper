@@ -1,0 +1,21 @@
+# GUI Framework
+PyQt6>=6.4.0,<6.8 # PyQt6的更新比较快，可以适当放宽上限，或固定在测试过的版本
+
+# Data Handling
+pandas>=1.5.0,<2.3
+openpyxl>=3.0.10,<3.2 # For .xlsx files
+xlrd>=2.0.1,<2.1      # For older .xls files (optional if only .xlsx)
+
+# Exchange API Clients
+python-binance>=1.0.16,<1.1
+okx>=0.2.0,<0.4 # 请确认 'okx' 是正确的包名，并根据您使用的版本调整范围
+
+# Address & Crypto Utilities
+eth-utils>=2.1.0,<2.4
+base58>=2.1.1,<2.2
+
+# Common Core & Utility Libraries (often pulled as dependencies, but good to list)
+numpy>=1.20,<1.27       # pandas dependency
+python-dateutil>=2.8.2,<2.10 # pandas and other libraries dependency
+requests>=2.25.0,<2.33  # For HTTP requests by API clients
+six>=1.15.0,<1.17       # Common compatibility library 
