@@ -269,7 +269,6 @@ def build_executable():
         print(f"Error: Main script '{MAIN_SCRIPT_PATH}' not found. Aborting.")
         return False
 
-    # 获取 PyInstaller 路径
     pyinstaller_path = get_pyinstaller_path()
     if not pyinstaller_path or not os.path.exists(pyinstaller_path):
         print("Error: PyInstaller executable not found.")
@@ -284,8 +283,21 @@ def build_executable():
         "--distpath", str(DIST_APP_DIR),
         "--workpath", str(BUILD_TEMP_DIR),
         "--specpath", str(SCRIPT_DIR),
-        "--exclude-module", "PyQt5",  # 显式排除 PyQt5
+        "--exclude-module", "PyQt5",
+        "--collect-data", "PyQt6",  # 收集 PyQt6 的数据文件
     ]
+
+    # 尝试添加 platforms 插件，常见的路径结构
+    # 注意: 这里的路径分隔符在不同操作系统上可能需要调整，但PyInstaller通常能处理好
+    # 我们需要找到 PyQt6 的 site-packages 路径
+    # 通常是 PyQt6.__path__[0] + "/Qt6/plugins/platforms"
+    # 但为了简化，先用相对路径，PyInstaller的hook可能会处理
+    # 如果不行，后续需要更精确的路径
+    pyinstaller_command.extend(["--add-data", f"PyQt6{os.pathsep}PyQt6"])
+    pyinstaller_command.extend(["--add-data", f"PyQt6/Qt6/plugins/platforms{os.pathsep}platforms"])
+    # PyQt6.sip 也是必须的
+    pyinstaller_command.extend(["--hidden-import", "PyQt6.sip"])
+
 
     if ICON_FILE_PATH.exists():
         pyinstaller_command.extend(["--icon", str(ICON_FILE_PATH)])
@@ -293,45 +305,36 @@ def build_executable():
     else:
         print(f"Warning: Icon file '{ICON_FILE_PATH}' not found. Using default icon.")
 
-    # --- Hidden Imports ---
-    # Add modules that PyInstaller might miss, especially for complex libraries like PyQt6 or pandas
     hidden_imports = [
-        "PyQt6.sip",
+        # PyQt6 sip 已在上面添加
         "PyQt6.QtNetwork",
         "PyQt6.QtGui",
         "PyQt6.QtWidgets",
         "PyQt6.QtCore",
-        "PyQt6.QtSvg", # If you use SVG icons/images
-        # "PyQt6.QtPrintSupport", # If you have printing functionality
-
+        "PyQt6.QtSvg",
         "pandas",
-        "pandas._libs.tslibs.np_datetime", # Common pandas hidden import
-        "pandas._libs.tslibs.nattype",    # Common pandas hidden import
-        "numpy",         # pandas dependency
-        "openpyxl",      # For .xlsx support in pandas
-        "requests",      # Often used by API client libraries
-        "dateutil",      # Python-dateutil, often used by pandas or other libs
-        "six",           # Common compatibility library
-
-        "binance",       # For python-binance
-        "okx",           # For python-okx
-
+        "pandas._libs.tslibs.np_datetime",
+        "pandas._libs.tslibs.nattype",
+        "numpy",
+        "openpyxl",
+        "requests",
+        "dateutil",
+        "six",
+        "binance",
+        "okx",
         "eth_utils",
-        "eth_abi",       # Often a dependency of eth_utils or web3
+        "eth_abi",
         "base58",
         "decimal",
         "configparser",
         "shutil",
         "csv",
-        # "candlelite" itself should be picked up as a dependency of okx,
-        # but if not, you might need to add "--hidden-import", "candlelite"
     ]
     for hi in hidden_imports:
         pyinstaller_command.extend(["--hidden-import", hi])
 
-    # --- Add data files for candlelite ---
     try:
-        import candlelite # Make sure candlelite is importable in the build script's env
+        import candlelite
         import inspect
         candlelite_pkg_dir = Path(inspect.getfile(candlelite)).parent
         candlelite_settings_config_src = candlelite_pkg_dir / "SETTINGS.config"
@@ -344,11 +347,8 @@ def build_executable():
         print("Warning: 'candlelite' package not found by build script. Cannot automatically add its SETTINGS.config.")
     except Exception as e_cl_settings:
         print(f"Warning: Error determining path for candlelite/SETTINGS.config: {e_cl_settings}")
-        
-    # --- Add other data files if necessary ---
-    # Example: --add-data "path/to/your_asset.png;assets_folder_in_bundle"
 
-    pyinstaller_command.append(str(MAIN_SCRIPT_PATH)) # Main script at the end
+    pyinstaller_command.append(str(MAIN_SCRIPT_PATH))
 
     ret_code, stdout, stderr = run_command(pyinstaller_command)
 
