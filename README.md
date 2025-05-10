@@ -54,14 +54,7 @@ pip install -r requirements.txt -i https://pypi.tuna.tsinghua.edu.cn/simple
 ```bash
 python main_qt.py
 ```
-
-### 方式二：使用打包好的可执行文件（适合普通用户）
-
-1. 下载最新版本的发布包（包含.exe文件）
-2. 直接运行MultiWithdrawalHelper.exe
-3. 首次运行时会自动安装所需依赖
-
-### 方式三：自行打包（适合高级用户）
+### 方式二：自行打包（适合高级用户）
 
 1. 克隆或下载项目到本地
 2. 运行build.py进行打包：
