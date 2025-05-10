@@ -1,9 +1,14 @@
+# Build directories
+build_temp/
+dist_packages/
+
 # Python
 __pycache__/
 *.py[cod]
 *$py.class
 *.so
 .Python
+env/
 build/
 develop-eggs/
 dist/
@@ -15,14 +20,12 @@ lib64/
 parts/
 sdist/
 var/
-wheels/
 *.egg-info/
 .installed.cfg
 *.egg
 
 # Virtual Environment
 venv/
-env/
 ENV/
 
 # IDE
@@ -43,4 +46,8 @@ addresses.json
 
 # OS specific
 .DS_Store
-Thumbs.db 
+Thumbs.db
+
+# Windows
+*.exe
+*.pkg 
