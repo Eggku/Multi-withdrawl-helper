@@ -284,6 +284,7 @@ def build_executable():
         "--distpath", str(DIST_APP_DIR),
         "--workpath", str(BUILD_TEMP_DIR),
         "--specpath", str(SCRIPT_DIR),
+        "--exclude-module", "PyQt5",  # 显式排除 PyQt5
     ]
 
     if ICON_FILE_PATH.exists():
