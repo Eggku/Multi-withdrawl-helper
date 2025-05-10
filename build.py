@@ -287,17 +287,8 @@ def build_executable():
         "--collect-data", "PyQt6",  # 收集 PyQt6 的数据文件
     ]
 
-    # 尝试添加 platforms 插件，常见的路径结构
-    # 注意: 这里的路径分隔符在不同操作系统上可能需要调整，但PyInstaller通常能处理好
-    # 我们需要找到 PyQt6 的 site-packages 路径
-    # 通常是 PyQt6.__path__[0] + "/Qt6/plugins/platforms"
-    # 但为了简化，先用相对路径，PyInstaller的hook可能会处理
-    # 如果不行，后续需要更精确的路径
-    pyinstaller_command.extend(["--add-data", f"PyQt6{os.pathsep}PyQt6"])
-    pyinstaller_command.extend(["--add-data", f"PyQt6/Qt6/plugins/platforms{os.pathsep}platforms"])
-    # PyQt6.sip 也是必须的
+    # PyQt6.sip 也是必须的，--collect-data PyQt6 应该会处理，但显式添加也无妨
     pyinstaller_command.extend(["--hidden-import", "PyQt6.sip"])
-
 
     if ICON_FILE_PATH.exists():
         pyinstaller_command.extend(["--icon", str(ICON_FILE_PATH)])
