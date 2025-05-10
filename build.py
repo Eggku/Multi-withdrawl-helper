@@ -10,7 +10,6 @@ import sys
 import subprocess
 import shutil
 from pathlib import Path
-import PyQt6 # <--- 添加 PyQt6 导入以便获取路径
 
 # --- Configuration ---
 APP_NAME = "MultiWithdrawalHelper"
@@ -21,7 +20,7 @@ REQUIREMENTS_FILE_NAME = "requirements.txt"
 README_FILE_NAME = f"README_使用说明_{APP_VERSION}.txt"
 
 # --- Paths ---
-SCRIPT_DIR = Path(__file__).resolve().parent # <--- 确保 SCRIPT_DIR 在 PyQt6 导入之后，以防万一
+SCRIPT_DIR = Path(__file__).resolve().parent
 MAIN_SCRIPT_PATH = SCRIPT_DIR / MAIN_SCRIPT_NAME
 ICON_FILE_PATH = SCRIPT_DIR / ICON_FILE_NAME
 REQUIREMENTS_FILE_PATH = SCRIPT_DIR / REQUIREMENTS_FILE_NAME
@@ -31,14 +30,6 @@ DIST_ROOT_DIR = SCRIPT_DIR / "dist_packages"  # Root for all packaged versions
 DIST_APP_DIR = DIST_ROOT_DIR / f"{APP_NAME}_v{APP_VERSION}" # Versioned output directory
 BUILD_TEMP_DIR = SCRIPT_DIR / "build_temp"  # PyInstaller temporary work directory
 SPEC_FILE_NAME = f"{APP_NAME}.spec"
-
-# --- PyInstaller Paths (获取 PyQt6 的实际路径) ---
-PYQT6_PACKAGE_DIR = Path(PyQt6.__file__).resolve().parent
-PYQT6_QT_DIR = PYQT6_PACKAGE_DIR / "Qt6"
-PYQT6_QT_BIN_DIR = PYQT6_QT_DIR / "bin"
-PYQT6_QT_PLUGINS_DIR = PYQT6_QT_DIR / "plugins"
-PYQT6_QT_PLATFORMS_DIR = PYQT6_QT_PLUGINS_DIR / "platforms"
-PYQT6_QT_TRANSLATIONS_DIR = PYQT6_QT_DIR / "translations"
 
 def run_command(command: list[str], cwd: Path | None = None) -> tuple[int, str, str]:
     """Runs a subprocess command and returns exit code, stdout, and stderr."""
@@ -50,18 +41,17 @@ def run_command(command: list[str], cwd: Path | None = None) -> tuple[int, str, 
             stderr=subprocess.PIPE,
             text=True,
             encoding='utf-8',
-            errors='replace',  # 使用 replace 处理无法解码的字符
             cwd=cwd if cwd else SCRIPT_DIR,
-            shell=False
+            shell=False # Safer, relies on command being in PATH or absolute
         )
         stdout, stderr = process.communicate()
         if stdout:
             print("--- stdout ---")
             print(stdout)
-        if stderr and process.returncode != 0:
+        if stderr and process.returncode != 0 : # Only print stderr if there was an error
             print("--- stderr ---")
             print(stderr)
-        return process.returncode, stdout or "", stderr or ""  # 确保返回值不为 None
+        return process.returncode, stdout, stderr
     except FileNotFoundError:
         print(f"Error: Command '{command[0]}' not found. Is it in your PATH?")
         return -1, "", f"Command '{command[0]}' not found."
@@ -69,110 +59,42 @@ def run_command(command: list[str], cwd: Path | None = None) -> tuple[int, str, 
         print(f"An unexpected error occurred while running command: {e}")
         return -1, "", str(e)
 
-def get_pyinstaller_path():
-    """获取 PyInstaller 可执行文件的完整路径"""
-    try:
-        # 获取 Python 安装目录
-        python_dir = os.path.dirname(sys.executable)
-        
-        # 检查 Scripts 目录
-        scripts_dir = os.path.join(python_dir, "Scripts")
-        pyinstaller_path = os.path.join(scripts_dir, "pyinstaller.exe")
-        
-        if os.path.exists(pyinstaller_path):
-            return pyinstaller_path
-            
-        # 检查用户目录
-        user_site = os.path.join(os.path.expanduser("~"), "AppData", "Local", "Packages", 
-                               "PythonSoftwareFoundation.Python.3.11_qbz5n2kfra8p0", 
-                               "LocalCache", "local-packages", "Python311", "Scripts")
-        pyinstaller_path = os.path.join(user_site, "pyinstaller.exe")
-        
-        if os.path.exists(pyinstaller_path):
-            return pyinstaller_path
-            
-        # 如果都找不到，返回 None
-        return None
-    except Exception as e:
-        print(f"Error finding PyInstaller path: {e}")
-        return None
-
 def check_and_install_pyinstaller():
     """Checks if PyInstaller is installed, and installs it if not."""
     print("\n--- Checking PyInstaller ---")
     try:
-        # 首先尝试导入
         import PyInstaller
         print(f"PyInstaller found (Version: {PyInstaller.__version__}).")
-        
-        # 获取 PyInstaller 路径
-        pyinstaller_path = get_pyinstaller_path()
-        if pyinstaller_path and os.path.exists(pyinstaller_path):
-            print(f"PyInstaller executable found at: {pyinstaller_path}")
-            return True
-        else:
-            print("PyInstaller is installed but executable not found. Attempting to install...")
-            
+        return True
     except ImportError:
         print("PyInstaller not found. Attempting to install...")
-    
-    try:
-        # 使用 pip 安装
-        print("Installing PyInstaller...")
-        subprocess.run([sys.executable, "-m", "pip", "install", "--user", "pyinstaller"],
-                      check=True,
-                      capture_output=True)
-        
-        # 再次检查路径
-        pyinstaller_path = get_pyinstaller_path()
-        if pyinstaller_path and os.path.exists(pyinstaller_path):
-            print(f"PyInstaller installed and found at: {pyinstaller_path}")
+        ret_code, _, err_msg = run_command([sys.executable, "-m", "pip", "install", "pyinstaller"])
+        if ret_code == 0:
+            print("PyInstaller installed successfully.")
             return True
         else:
-            print("PyInstaller installed but executable not found.")
+            print(f"Failed to install PyInstaller. Error: {err_msg}")
             return False
-            
-    except subprocess.CalledProcessError as e:
-        print(f"Failed to install PyInstaller. Error: {e}")
-        return False
-    except Exception as e:
-        print(f"Unexpected error: {e}")
-        return False
 
 def install_requirements():
-    """安装项目依赖"""
-    print("\n--- Checking and Installing Dependencies from requirements.txt ---\n")
-    
-    try:
-        # 首先安装 PyInstaller
-        print("Installing PyInstaller first...")
-        subprocess.run([sys.executable, "-m", "pip", "install", "pyinstaller>=6.0.0"], 
-                      check=True, capture_output=True, text=True)
-        
-        # 然后安装其他依赖
-        print("\nInstalling other dependencies...")
-        result = subprocess.run(
-            [sys.executable, "-m", "pip", "install", "-r", "requirements.txt"],
-            capture_output=True,
-            text=True
-        )
-        
-        if result.returncode != 0:
-            print("\n--- stdout ---")
-            print(result.stdout)
-            print("\n--- stderr ---")
-            print(result.stderr)
-            print(f"\nFailed to install dependencies. Error: {result.stderr}")
-            print("\nContinuing build, but it may fail or the EXE might not work correctly.")
-        else:
-            print("All dependencies installed successfully.")
-            
-    except subprocess.CalledProcessError as e:
-        print(f"Error installing dependencies: {str(e)}")
+    """Installs dependencies from requirements.txt."""
+    print(f"\n--- Checking and Installing Dependencies from {REQUIREMENTS_FILE_NAME} ---")
+    if not REQUIREMENTS_FILE_PATH.exists():
+        print(f"Warning: {REQUIREMENTS_FILE_NAME} not found. Skipping dependency installation.")
+        print("Please ensure all necessary packages (PyQt6, pandas, python-binance, okx, etc.) are installed.")
+        return True # Continue build, assuming user managed dependencies
+
+    ret_code, _, err_msg = run_command([sys.executable, "-m", "pip", "install", "-r", str(REQUIREMENTS_FILE_PATH)])
+    if ret_code == 0:
+        print("Dependencies installed/updated successfully.")
+        return True
+    else:
+        print(f"Failed to install dependencies. Error: {err_msg}")
+        # Decide if this should be a fatal error
+        # return False
         print("Continuing build, but it may fail or the EXE might not work correctly.")
-    except Exception as e:
-        print(f"Unexpected error during dependency installation: {str(e)}")
-        print("Continuing build, but it may fail or the EXE might not work correctly.")
+        return True
+
 
 def clean_previous_build():
     """Removes previous build and distribution directories."""
@@ -278,82 +200,49 @@ def build_executable():
         print(f"Error: Main script '{MAIN_SCRIPT_PATH}' not found. Aborting.")
         return False
 
-    pyinstaller_path = get_pyinstaller_path()
-    if not pyinstaller_path or not os.path.exists(pyinstaller_path):
-        print("Error: PyInstaller executable not found.")
-        return False
-
     pyinstaller_command = [
-        pyinstaller_path,
+        "pyinstaller",
         "--name", APP_NAME,
-        # "--onefile",  # 暂时移除，改为目录模式打包
-        # "--windowed", # 暂时移除，改为控制台模式
-        "--clean",
-        "--log-level", "DEBUG",
+        "--onefile",
+        "--windowed",  # Use --console for debugging if needed
         "--distpath", str(DIST_APP_DIR),
         "--workpath", str(BUILD_TEMP_DIR),
-        "--specpath", str(SCRIPT_DIR),
-        "--exclude-module", "PyQt5",
+        "--specpath", str(SCRIPT_DIR), # Place .spec file in script directory
+        "--collect-data=PyQt6",      # Let PyInstaller handle PyQt6 files
+        "--exclude-module=PyQt5",    # Avoid potential PyQt5 conflicts
+        "--log-level=INFO"           # Set a default log level
     ]
-
-    # 手动添加 PyQt6 的核心 DLLs 和插件
-    if PYQT6_QT_BIN_DIR.is_dir():
-        pyinstaller_command.extend(['--add-data', f'{str(PYQT6_QT_BIN_DIR)}{os.pathsep}.'])
-        print(f"Adding PyQt6 binaries from: {PYQT6_QT_BIN_DIR} to bundle root")
-    else:
-        print(f"Warning: PyQt6 Qt6/bin directory not found at {PYQT6_QT_BIN_DIR}")
-
-    if PYQT6_QT_PLATFORMS_DIR.is_dir():
-        pyinstaller_command.extend(['--add-data', f'{str(PYQT6_QT_PLATFORMS_DIR)}{os.pathsep}platforms'])
-        print(f"Adding PyQt6 platform plugins from: {PYQT6_QT_PLATFORMS_DIR} to platforms/")
-    else:
-        print(f"Warning: PyQt6 Qt6/plugins/platforms directory not found at {PYQT6_QT_PLATFORMS_DIR}")
-
-    if PYQT6_QT_TRANSLATIONS_DIR.is_dir():
-        pyinstaller_command.extend(['--add-data', f'{str(PYQT6_QT_TRANSLATIONS_DIR)}{os.pathsep}translations'])
-        print(f"Adding PyQt6 translations from: {PYQT6_QT_TRANSLATIONS_DIR} to translations/")
-    else:
-        print(f"Warning: PyQt6 Qt6/translations directory not found at {PYQT6_QT_TRANSLATIONS_DIR}")
-
-    # PyQt6.sip 也是必须的
-    pyinstaller_command.extend(["--hidden-import", "PyQt6.sip"])
 
     if ICON_FILE_PATH.exists():
         pyinstaller_command.extend(["--icon", str(ICON_FILE_PATH)])
-        pyinstaller_command.extend(["--add-data", f"{ICON_FILE_PATH}{os.pathsep}."])
+        # Also add as data if QIcon('app.ico') is used directly and --icon is not enough for embedding
+        # For --onefile, --icon should embed it. This --add-data might be redundant but often kept.
+        pyinstaller_command.extend(["--add-data", f"{str(ICON_FILE_PATH)}{os.pathsep}."])
     else:
-        print(f"Warning: Icon file '{ICON_FILE_PATH}' not found. Using default icon.")
+        print(f"Warning: Icon file '{ICON_FILE_PATH}' (expected: {ICON_FILE_NAME}) not found. Using default icon.")
 
+    # --- Hidden Imports (Simplified) ---
+    # Most hidden imports should be automatically detected by PyInstaller or handled by --collect-data=PyQt6.
+    # We will start with a minimal set. If runtime errors occur (e.g., ModuleNotFoundError),
+    # specific hidden imports can be added back.
+    # Common ones that might still be needed if not picked up:
     hidden_imports = [
-        # PyQt6 sip 已在上面添加
-        "PyQt6.QtNetwork",
-        "PyQt6.QtGui",
-        "PyQt6.QtWidgets",
-        "PyQt6.QtCore",
-        "PyQt6.QtSvg",
-        "pandas",
-        "pandas._libs.tslibs.np_datetime",
-        "pandas._libs.tslibs.nattype",
-        "numpy",
-        "openpyxl",
-        "requests",
-        "dateutil",
-        "six",
-        "binance",
-        "okx",
-        "eth_utils",
-        "eth_abi",
-        "base58",
-        "decimal",
-        "configparser",
-        "shutil",
-        "csv",
+        # "pandas._libs.tslibs.np_datetime", # Example if pandas sub-modules are missed
+        # "pandas._libs.tslibs.nattype",
+        # "pkg_resources.py2_warn" # Sometimes needed for older setuptools/pkg_resources
     ]
+    # For now, we try without any explicit hidden imports beyond what --collect-data provides.
+    # If your application directly imports modules that PyInstaller misses, add them here.
+    # For example, if 'eth_utils' or 'base58' are direct imports and cause issues:
+    # hidden_imports.extend(["eth_utils", "base58"])
+
+
     for hi in hidden_imports:
         pyinstaller_command.extend(["--hidden-import", hi])
 
+    # --- Add data files for candlelite ---
     try:
-        import candlelite
+        import candlelite 
         import inspect
         candlelite_pkg_dir = Path(inspect.getfile(candlelite)).parent
         candlelite_settings_config_src = candlelite_pkg_dir / "SETTINGS.config"
@@ -366,22 +255,21 @@ def build_executable():
         print("Warning: 'candlelite' package not found by build script. Cannot automatically add its SETTINGS.config.")
     except Exception as e_cl_settings:
         print(f"Warning: Error determining path for candlelite/SETTINGS.config: {e_cl_settings}")
+        
+    pyinstaller_command.append(str(MAIN_SCRIPT_PATH)) # Main script at the end
 
-    pyinstaller_command.append(str(MAIN_SCRIPT_PATH))
-
-    ret_code, stdout, stderr = run_command(pyinstaller_command)
+    ret_code, out_msg, err_msg = run_command(pyinstaller_command) # Ensure 3 values are unpacked
 
     if ret_code == 0:
         print(f"PyInstaller build successful. Executable at: {DIST_APP_DIR / (APP_NAME + '.exe')}")
         return True
     else:
         print(f"PyInstaller build failed. Exit code: {ret_code}")
-        if stdout and "UPX is not available." in stdout:
-            print("Note: UPX (executable packer) was not found. The EXE is larger but should still work.")
-            print("If you want smaller EXEs, install UPX and ensure it's in your system PATH.")
-        if stderr:
-            print("Error details:")
-            print(stderr)
+        if "UPX is not available." in err_msg or "UPX is not available." in out_msg: # stdout might also contain it
+             print("Note: UPX (executable packer) was not found. The EXE is larger but should still work.")
+             print("If you want smaller EXEs, install UPX and ensure it's in your system PATH.")
+             # If UPX not found is the *only* error, we might consider it a soft fail or success.
+             # For now, any non-zero exit code is a failure.
         return False
 
 def main_build_process():
