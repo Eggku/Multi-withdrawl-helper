@@ -21,7 +21,7 @@ from PyQt6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout, QH
                            QGroupBox, QTabWidget, QSplitter, QToolBar, QStatusBar,
                            QFileDialog, QSizePolicy, QDialog, QCheckBox, QDialogButtonBox, QTextBrowser)
 from PyQt6.QtCore import Qt, QTimer, pyqtSignal, QSize, QSettings, QLocale
-from PyQt6.QtGui import QAction, QFont, QIcon, QColor, QPalette, QIntValidator, QDoubleValidator, QCloseEvent
+from PyQt6.QtGui import QAction, QFont, QIcon, QColor, QPalette, QIntValidator, QDoubleValidator, QCloseEvent, QClipboard
 
 # API相关类导入
 from exchange_api_base import BaseExchangeAPI
@@ -32,6 +32,122 @@ from okx_exchange import OKXAPI
 from settings_dialog import SettingsDialog
 from address_validator import AddressValidator
 from history_dialog import HistoryDialog
+
+# 添加打赏对话框类
+class DonationDialog(QDialog):
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle("支持开发者")
+        self.setFixedSize(500, 400)
+        self.setStyleSheet("""
+            QDialog {
+                background-color: #2D2D2D;
+                color: #CCCCCC;
+            }
+            QLabel {
+                color: #CCCCCC;
+            }
+            QPushButton {
+                background-color: #444444;
+                border: 1px solid #555555;
+                border-radius: 4px;
+                padding: 5px 15px;
+                color: #CCCCCC;
+            }
+            QPushButton:hover {
+                background-color: #555555;
+            }
+            QLineEdit {
+                background-color: #3A3A3A;
+                border: 1px solid #555555;
+                color: #FFFFFF;
+                padding: 5px;
+            }
+            QGroupBox {
+                border: 1px solid #444444;
+                border-radius: 4px;
+                margin-top: 10px;
+                padding-top: 15px;
+                color: #CCCCCC;
+            }
+            QGroupBox::title {
+                subcontrol-origin: margin;
+                subcontrol-position: top left;
+                left: 10px;
+                padding: 0 5px;
+                color: #85C1E9;
+            }
+        """)
+        
+        layout = QVBoxLayout(self)
+        layout.setSpacing(15)
+        
+        # 添加说明文本
+        description = QLabel("如果您觉得这个工具对您有帮助，欢迎打赏支持开发者继续改进！")
+        description.setWordWrap(True)
+        description.setStyleSheet("color: #85C1E9; font-size: 12pt; margin-bottom: 20px;")
+        layout.addWidget(description)
+        
+        # EVM地址组
+        evm_group = QGroupBox("EVM链地址")
+        evm_layout = QVBoxLayout(evm_group)
+        evm_layout.setSpacing(10)
+        
+        # 添加EVM地址
+        self.add_donation_address(evm_layout, "ETH:", "0x093e76ab56dbb4d4438305fee72fdbec44b89e17")
+        self.add_donation_address(evm_layout, "USDT (TRC20):", "TP3maixTnM7fFYYu4CD2tga4LxVjiW7BMw")
+        
+        layout.addWidget(evm_group)
+        
+        # SOL地址组
+        sol_group = QGroupBox("Solana链地址")
+        sol_layout = QVBoxLayout(sol_group)
+        sol_layout.setSpacing(10)
+        
+        # 添加SOL地址
+        self.add_donation_address(sol_layout, "SOL:", "2G4wiH3PSwSPjB6FDFa7FzMAA9ysAYagHSyqUvhhNRMp")
+        
+        layout.addWidget(sol_group)
+        
+        # 添加关闭按钮
+        close_button = QPushButton("关闭")
+        close_button.setFixedWidth(100)
+        close_button.clicked.connect(self.accept)
+        layout.addWidget(close_button, alignment=Qt.AlignmentFlag.AlignCenter)
+    
+    def add_donation_address(self, layout, label_text, address):
+        container = QWidget()
+        container_layout = QHBoxLayout(container)
+        container_layout.setContentsMargins(0, 0, 0, 0)
+        container_layout.setSpacing(10)
+        
+        label = QLabel(label_text)
+        label.setStyleSheet("color: #F5B041; min-width: 100px;")
+        container_layout.addWidget(label)
+        
+        address_input = QLineEdit(address)
+        address_input.setReadOnly(True)
+        address_input.setStyleSheet("""
+            QLineEdit {
+                background-color: #3A3A3A;
+                border: 1px solid #555555;
+                color: #FFFFFF;
+                padding: 5px;
+            }
+        """)
+        container_layout.addWidget(address_input)
+        
+        copy_button = QPushButton("复制")
+        copy_button.setFixedWidth(60)
+        copy_button.clicked.connect(lambda: self.copy_to_clipboard(address))
+        container_layout.addWidget(copy_button)
+        
+        layout.addWidget(container)
+    
+    def copy_to_clipboard(self, text):
+        clipboard = QApplication.clipboard()
+        clipboard.setText(text)
+        QMessageBox.information(self, "复制成功", "地址已复制到剪贴板！")
 
 # =============================================================================
 # 深色主题样式定义
@@ -252,6 +368,10 @@ class WithdrawalHelper(QMainWindow):
         self.last_address_file_path = ""
         self.show_full_addresses = False
         
+        # Thread synchronization for withdrawal confirmation
+        self.withdrawal_confirm_event = threading.Event()
+        self.user_agreed_to_this_withdrawal = False
+        
         central_widget = QWidget()
         self.setCentralWidget(central_widget)
         main_layout = QVBoxLayout(central_widget)
@@ -340,6 +460,13 @@ class WithdrawalHelper(QMainWindow):
             
             btn.clicked.connect(callback)
             toolbar_layout.addWidget(btn)
+        
+        # 添加打赏按钮
+        donation_btn = QPushButton("支持开发者")
+        donation_btn.setFixedHeight(28)
+        donation_btn.setStyleSheet("color: #3498DB;")
+        donation_btn.clicked.connect(self.show_donation_dialog)
+        toolbar_layout.addWidget(donation_btn)
         
         toolbar_layout.addStretch(1)
         main_layout.addWidget(toolbar_widget)
@@ -437,11 +564,11 @@ class WithdrawalHelper(QMainWindow):
         status_layout = QVBoxLayout(status_group)
         status_layout.setContentsMargins(10, 15, 10, 10)
         progress_layout = QHBoxLayout()
-        self.progress_label = QLabel("进度: 0%")
+        self.progress_label = QLabel("进度: 0/0")
         self.progress_label.setFixedWidth(60)
         progress_layout.addWidget(self.progress_label)
         self.progress_bar = QProgressBar()
-        self.progress_bar.setTextVisible(False)
+        self.progress_bar.setTextVisible(False)  # 不显示进度条文本
         progress_layout.addWidget(self.progress_bar)
         status_layout.addLayout(progress_layout)
         wait_layout = QHBoxLayout()
@@ -546,7 +673,12 @@ class WithdrawalHelper(QMainWindow):
             QGroupBox.resizeEvent(parent_group, event)
         
     def _load_addresses_from_file(self, file_path):
-        """Helper method to load addresses and optional labels from a CSV or Excel file."""
+        """Helper method to load addresses and optional labels from a CSV or Excel file.
+        
+        支持两种文件格式:
+        1. 单列地址格式: 包含'address'和可选的'label'列
+        2. 多列地址格式: 包含多列，每列代表一种类型的地址(EVM、SUI、SOL等)
+        """
         self.log_message(f"尝试从文件加载地址和标签: {file_path}", level="DEBUG")
         try:
             if file_path.lower().endswith('.csv'):
@@ -559,34 +691,21 @@ class WithdrawalHelper(QMainWindow):
             else:
                 return False, "不支持的文件格式。请选择 .csv 或 .xlsx 文件。"
 
+            # 检查文件是否为空
+            if df.empty:
+                return False, "文件为空，没有可导入的地址。"
+
             # 规范化列名: 转小写，去首尾空格
             df.columns = df.columns.str.strip().str.lower()
 
-            # 检查必需的 'address' 列是否存在
-            if 'address' not in df.columns:
-                return False, "文件中未找到名为 'address' 的列 (不区分大小写)。"
-            
-            # 检查可选的 'label' 列是否存在
-            has_label_column = 'label' in df.columns
-            if not has_label_column:
-                 self.log_message("文件中未找到 'label' 列，将不使用地址标签。", level="INFO")
-
-            # 提取数据并构建字典列表
-            addresses_data = []
-            for index, row in df.iterrows():
-                addr = row['address'].strip()
-                label = row['label'].strip() if has_label_column and row['label'] else None # 获取标签，空则为None
-                
-                if addr: # 只添加地址不为空的行
-                    addresses_data.append({'address': addr, 'label': label})
-            
-            if not addresses_data:
-                 return False, "文件中未能提取到有效的地址行。"
-
-            self.current_addresses = addresses_data # 更新为字典列表
-            self.used_addresses = set() # 清除已用地址记录
-            self.log_message(f"成功从文件加载 {len(self.current_addresses)} 条地址记录 (包含标签信息)。", level="INFO")
-            return True, f"成功加载 {len(self.current_addresses)} 条地址记录。"
+            # 检测文件格式: 单列地址格式 vs 多列地址格式
+            # 如果含有'address'列，则视为单列地址格式；否则视为多列地址格式
+            if 'address' in df.columns:
+                # 单列地址格式处理
+                return self._process_single_column_addresses(df)
+            else:
+                # 多列地址格式处理
+                return self._process_multi_column_addresses(df)
 
         except FileNotFoundError:
             self.logger.error(f"地址文件未找到: {file_path}")
@@ -594,6 +713,186 @@ class WithdrawalHelper(QMainWindow):
         except Exception as e:
             self.logger.error(f"读取地址文件时出错: {file_path} - {e}", exc_info=True)
             return False, f"读取文件时出错: {e}"
+    
+    def _process_single_column_addresses(self, df):
+        """处理单列地址格式的DataFrame."""
+        # 检查必需的 'address' 列是否存在
+        if 'address' not in df.columns:
+            return False, "文件中未找到名为 'address' 的列 (不区分大小写)。"
+            
+        # 检查可选的 'label' 列是否存在
+        has_label_column = 'label' in df.columns
+        if not has_label_column:
+            self.log_message("文件中未找到 'label' 列，将不使用地址标签。", level="INFO")
+
+        # 提取数据并构建字典列表
+        addresses_data = []
+        for index, row in df.iterrows():
+            addr = row['address'].strip()
+            label = row['label'].strip() if has_label_column and row['label'] else None
+            
+            if addr: # 只添加地址不为空的行
+                addresses_data.append({'address': addr, 'label': label})
+        
+        if not addresses_data:
+            return False, "文件中未能提取到有效的地址行。"
+
+        self.current_addresses = addresses_data # 更新为字典列表
+        self.used_addresses = set() # 清除已用地址记录
+        
+        # 设置当前正在使用的地址类型
+        self.current_address_type = 'standard'
+        
+        self.log_message(f"成功从单列格式文件加载 {len(self.current_addresses)} 条地址记录。", level="INFO")
+        return True, f"成功加载 {len(self.current_addresses)} 条地址记录。"
+
+    def _process_multi_column_addresses(self, df):
+        """处理多列地址格式的DataFrame，每列代表一种类型的地址."""
+        # 检查是否至少有一列
+        if len(df.columns) == 0:
+            return False, "文件中没有列可供导入。"
+            
+        # 检测可用的地址类型列
+        available_types = []
+        address_types_map = {
+            'evm': ['evm', 'eth', 'ethereum', 'bsc', 'polygon', 'avax', 'avalanche', 'arb', 'arbitrum'],
+            'sui': ['sui'],
+            'sol': ['sol', 'solana']
+        }
+        
+        # 创建一个字典，用于存储每种类型对应的列名
+        self.address_type_columns = {}
+        
+        # 检查每一列，判断是否为地址类型列
+        for col in df.columns:
+            col_lower = col.lower()
+            # 跳过包含'label'的列
+            if 'label' in col_lower:
+                continue
+                
+            for addr_type, keywords in address_types_map.items():
+                if col_lower in keywords or any(keyword in col_lower for keyword in keywords):
+                    available_types.append(addr_type)
+                    self.address_type_columns[addr_type] = col
+                    break
+            
+            # 如果列名不在预定义的类型中，且不包含'label'，视为自定义类型
+            if col not in self.address_type_columns.values() and 'label' not in col_lower:
+                # 使用列名本身作为类型标识符
+                custom_type = col_lower
+                available_types.append(custom_type)
+                self.address_type_columns[custom_type] = col
+        
+        if not available_types:
+            return False, "文件中未能识别出任何地址类型列。请确保列名包含EVM、SUI、SOL等关键词，或者使用单列'address'格式。"
+        
+        # 存储所有可用的地址类型
+        self.available_address_types = available_types
+        
+        # 默认选择第一个可用类型
+        self.current_address_type = available_types[0]
+        
+        # 提取当前选定类型的地址
+        self._load_addresses_for_current_type(df)
+        
+        return True, f"成功加载多列地址文件，可用类型: {', '.join(available_types)}。当前使用: {self.current_address_type}。"
+    
+    def _load_addresses_for_current_type(self, df=None):
+        """根据当前选定的地址类型，从DataFrame中加载相应列的地址."""
+        if not hasattr(self, 'current_address_type') or not hasattr(self, 'address_type_columns'):
+            self.log_message("无法加载地址：未设置当前地址类型或类型映射。", level="ERROR")
+            return
+        
+        # 如果没有提供DataFrame，则使用last_address_file_path再次加载
+        if df is None and hasattr(self, 'last_address_file_path') and self.last_address_file_path:
+            try:
+                if self.last_address_file_path.lower().endswith('.csv'):
+                    df = pd.read_csv(self.last_address_file_path, dtype=str, header=0, keep_default_na=False)
+                elif self.last_address_file_path.lower().endswith('.xlsx'):
+                    df = pd.read_excel(self.last_address_file_path, dtype=str, header=0, keep_default_na=False)
+                else:
+                    self.log_message("无法重新加载地址：不支持的文件格式。", level="ERROR")
+                    return
+            except Exception as e:
+                self.log_message(f"重新加载地址文件时出错: {e}", level="ERROR")
+                return
+        
+        if df is None:
+            self.log_message("无法加载地址：DataFrame为None且无法重新加载文件。", level="ERROR")
+            return
+        
+        # 获取当前类型对应的列名
+        column = self.address_type_columns.get(self.current_address_type)
+        if not column or column not in df.columns:
+            self.log_message(f"无法找到当前类型 {self.current_address_type} 对应的列 {column}。", level="ERROR")
+            return
+        
+        # 提取地址并构建字典列表
+        addresses_data = []
+        for index, row in df.iterrows():
+            addr = str(row[column]).strip()
+            if addr:  # 只添加地址不为空的行
+                addresses_data.append({'address': addr, 'label': None})  # 多列格式暂不支持label
+        
+        self.current_addresses = addresses_data
+        self.used_addresses = set()  # 清除已用地址记录
+        self.log_message(f"已加载 {len(addresses_data)} 条 {self.current_address_type} 类型的地址。", level="INFO")
+        self.refresh_address_list()
+    
+    def _setup_address_type_selector(self):
+        """设置地址类型选择器UI."""
+        if not hasattr(self, 'available_address_types') or not self.available_address_types:
+            return
+        
+        # 如果选择器已存在，先移除
+        if hasattr(self, 'address_type_selector'):
+            try:
+                if self.address_type_selector.parent():
+                    self.address_type_selector.parent().layout().removeWidget(self.address_type_selector)
+                self.address_type_selector.deleteLater()
+            except:
+                pass
+        
+        # 创建一个水平布局，放置标签和选择器
+        selector_container = QWidget()
+        selector_layout = QHBoxLayout(selector_container)
+        selector_layout.setContentsMargins(5, 0, 5, 0)
+        selector_layout.setSpacing(5)
+        
+        # 添加标签
+        selector_layout.addWidget(QLabel("地址类型:"))
+        
+        # 创建选择器
+        self.address_type_selector = QComboBox()
+        self.address_type_selector.addItems(self.available_address_types)
+        self.address_type_selector.setCurrentText(self.current_address_type)
+        self.address_type_selector.currentTextChanged.connect(self._on_address_type_changed)
+        selector_layout.addWidget(self.address_type_selector)
+        
+        # 为了自适应宽度，添加一个弹性空间
+        selector_layout.addStretch(1)
+        
+        # 找到地址文本框所在的父容器
+        address_group = None
+        for child in self.findChildren(QGroupBox):
+            if child.title() == "提币地址列表":
+                address_group = child
+                break
+        
+        if address_group and address_group.layout():
+            # 在地址列表上方添加选择器
+            address_group.layout().insertWidget(0, selector_container)
+    
+    def _on_address_type_changed(self, address_type):
+        """当用户切换地址类型时调用."""
+        if address_type == self.current_address_type:
+            return
+        
+        self.current_address_type = address_type
+        self.log_message(f"地址类型已切换为: {address_type}", level="INFO")
+        
+        # 重新加载当前类型的地址
+        self._load_addresses_for_current_type()
 
     def refresh_address_list(self):
         """刷新界面上的地址列表显示 (处理字典列表)."""
@@ -705,9 +1004,16 @@ class WithdrawalHelper(QMainWindow):
         elif action == "stop_withdrawal":
             self.stop_withdrawal()
 
-    def update_progress(self, value, text):
+    def update_progress(self, value):
+        """更新进度条"""
         self.progress_bar.setValue(value)
-        self.progress_label.setText(text)
+        try:
+            current = int(value * self.total_rows / 100)
+            total = self.total_rows
+        except Exception:
+            current = 0
+            total = 0
+        self.progress_label.setText(f"进度: {current}/{total}")
 
     def update_wait(self, value, text):
         self.wait_bar.setValue(value)
@@ -1181,6 +1487,26 @@ class WithdrawalHelper(QMainWindow):
             self._clear_networks_balance_fee_price_ui() # Clear dependent fields
             return
 
+        # 自动切换地址类型
+        if hasattr(self, 'available_address_types'):
+            # 根据币种确定对应的地址类型
+            address_type_map = {
+                'SUI': 'sui',
+                'SOL': 'sol',
+                'ETH': 'evm',
+                'USDT': 'evm',
+                'USDC': 'evm',
+                'G': 'evm'
+            }
+            
+            target_type = address_type_map.get(coin_text.upper())
+            if target_type and target_type in self.available_address_types:
+                # 如果目标类型在可用类型列表中，则切换
+                self.log_message(f"自动切换地址类型为: {target_type}", level="INFO")
+                self.current_address_type = target_type
+                # 重新加载当前类型的地址
+                self._load_addresses_for_current_type()
+
         # 1. Update Networks for the selected coin
         self._update_networks_display(coin_text)
         # 2. Update Balance for the selected coin
@@ -1537,6 +1863,9 @@ class WithdrawalHelper(QMainWindow):
         self.stop_button.setEnabled(True)
         self.log_message("提币流程已启动。", level="SUCCESS")
         
+        # 设置总行数
+        self.total_rows = end_index - start_index + 1
+        
         # 5. 启动后台线程
         # 将地址序号调整为0-based index给线程使用
         thread_start_index = start_index - 1 
@@ -1569,7 +1898,8 @@ class WithdrawalHelper(QMainWindow):
             self.log_message("用户请求停止提币流程。", level="INFO")
             if hasattr(self, 'start_button'): self.start_button.setEnabled(True)
             if hasattr(self, 'stop_button'): self.stop_button.setEnabled(False)
-            self.update_progress(0, "进度: 0%") # Reset progress
+            # 重置进度条和等待条 (虽然线程finally里也做了，这里再做一次确保UI更新)
+            self.update_progress(0)  # Reset progress
             self.update_wait(0, "等待: 0秒") # Reset wait
             QMessageBox.information(self, "操作停止", "提币流程已请求停止。")
         else:
@@ -1708,49 +2038,68 @@ class WithdrawalHelper(QMainWindow):
 
         # TODO: 未来可以考虑用一个专门的表格对话框来更清晰地展示大量错误
 
-    def _show_withdrawal_confirm_dialog(self, coin: str, network: str, amount: float, address: str, memo: str, is_large_withdrawal: bool):
+    def _show_withdrawal_confirm_dialog(self, coin: str, network: str, amount: Decimal, address: str, memo: str | None, is_large_withdrawal: bool):
         """显示提币确认对话框。
         由 confirm_withdrawal_signal 信号触发。
+        Amount is Decimal.
         """
-        self.logger.info(f"请求用户确认提币: {amount} {coin} 到 {address[:10]}... (网络: {network}){' Memo: ' + memo if memo else ''}")
+        self.logger.info(f"请求用户确认提币: {amount} {coin} 到 {address[:10]}... (网络: {network}){' Memo: ' + str(memo) if memo else ''}")
         
         title = "提币确认"
-        message = f"请确认以下提币操作:\n\n"
-        message += f"币种: {coin}\n"
-        message += f"网络: {network}\n"
-        message += f"数量: {amount:.8f} {coin}\n" # 通常显示较多小数位
-        message += f"地址: {address}\n"
+        
+        # Construct the message string safely using a list of parts
+        message_parts = []
+        message_parts.append(f"请确认以下提币操作:\n\n")
+        message_parts.append(f"币种: {coin}\n")
+        message_parts.append(f"网络: {network}\n")
+        # Format Decimal amount to 8 decimal places for display
+        message_parts.append(f"数量: {amount:.8f} {coin}\n") 
+        message_parts.append(f"地址: {address}\n")
+        
         if memo:
-            message += f"Memo/Tag: {memo}\n"
+            message_parts.append(f"Memo/Tag: {str(memo)}\n")
         
         if is_large_withdrawal:
             title = "大额提币确认"
-            message += "\n警告: 这是一笔大额提币操作！\n"
+            message_parts.append("\n<span style='color:red;'>警告: 这是一笔大额提币操作！</span>\n")
 
-        message += "\n您确定要执行此提币操作吗？"
+        message_parts.append("\n您确定要执行此提币操作吗？")
+        message = "".join(message_parts)
 
-        reply = QMessageBox.question(self, title, message, 
-                                     QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No | QMessageBox.StandardButton.Cancel, 
-                                     QMessageBox.StandardButton.No) # 默认选择 No
+        # Create a QMessageBox instance
+        msg_box = QMessageBox(self) # Parent to self
+        msg_box.setWindowTitle(title)
+        msg_box.setIcon(QMessageBox.Icon.Question)
+        msg_box.setTextFormat(Qt.TextFormat.RichText)  # Enable Rich Text for HTML
+        msg_box.setText(message)
+
+        # Configure buttons: "确认" (Yes) and "取消" (Cancel)
+        msg_box.setStandardButtons(QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.Cancel)
+        
+        button_yes = msg_box.button(QMessageBox.StandardButton.Yes)
+        if button_yes: # Defensive check
+            button_yes.setText("确认")
+
+        button_cancel = msg_box.button(QMessageBox.StandardButton.Cancel)
+        if button_cancel: # Defensive check
+            button_cancel.setText("取消")
+            msg_box.setDefaultButton(button_cancel) # Make "取消" default
+
+        # Execute the dialog and get the standard button clicked
+        clicked_std_button = msg_box.exec()
 
         user_confirmed = False
-        apply_to_all_decision = False # 这个变量用来处理"是否应用于所有大额提币"的情况，本次对话框不直接处理它
-                                     # 它应该由更上层的逻辑在初次大额提币确认时设置，并传递给此信号的触发者
-
-        if reply == QMessageBox.StandardButton.Yes:
+        if clicked_std_button == QMessageBox.StandardButton.Yes:
             user_confirmed = True
             self.log_message("用户已确认提币。", level="INFO")
-        elif reply == QMessageBox.StandardButton.No:
+        else: 
             user_confirmed = False
-            self.log_message("用户已取消提币。", level="INFO")
-        else: # Cancel or closed dialog
-            user_confirmed = False # Treat cancel as No
-            self.log_message("用户关闭或取消了提币确认对话框。", level="INFO")
-
-        # 发送用户的决定回提币逻辑
-        # 注意: apply_to_all_decision 的状态应该由调用此方法的逻辑来管理和决定如何传递
-        # 这里我们只是简单地将当前单个操作的确认结果和is_large_withdrawal标志传回
-        # 实际的"应用于所有"的逻辑会在 self._handle_withdrawal_confirmation 中处理
+            if clicked_std_button == QMessageBox.StandardButton.Cancel:
+                self.log_message("用户已取消提币 (点击'取消'按钮)。", level="INFO")
+            else: # Dialog closed via 'X', Esc, or other non-button action
+                self.log_message("用户关闭或以其他方式取消了提币确认对话框。", level="INFO")
+        
+        # Emit the result of user's decision
         self.withdrawal_confirmation_result.emit(user_confirmed, is_large_withdrawal)
 
     def _handle_withdrawal_confirmation(self, user_confirmed: bool, is_large_withdrawal: bool):
@@ -1784,7 +2133,9 @@ class WithdrawalHelper(QMainWindow):
         # TODO: 实现与提币线程的同步机制，将 user_confirmed 的结果传递过去。
         # TODO: 如果是大额提币，并且是第一次，可能需要在这里或提币循环中处理"应用于所有"的逻辑，
         #       并相应设置 self.large_withdrawal_apply_to_all 和 self.large_withdrawal_decision。
-        self.logger.info("_handle_withdrawal_confirmation 方法执行完毕 (具体同步逻辑待实现)。")
+        self.user_agreed_to_this_withdrawal = user_confirmed
+        self.withdrawal_confirm_event.set()
+        self.logger.info(f"_handle_withdrawal_confirmation: user_confirmed={user_confirmed}, event set.")
 
     def _process_withdrawals(self, coin, network, min_amount, max_amount, 
                              start_idx, end_idx, min_interval, max_interval):
@@ -1879,7 +2230,31 @@ class WithdrawalHelper(QMainWindow):
                     processed_count += 1
                     continue
 
-                # --- 2. 检查余额 (考虑手续费) ---
+                # --- 2. 大额提币检查 (应在余额检查之前) ---
+                if self.enable_warning and usd_price is not None:
+                    try:
+                        usd_value = random_amount_quantized * usd_price
+                        if usd_value >= Decimal(str(self.warning_threshold)):
+                            self.log_message(f"警告：地址 {address_display_index} 的提币金额 ${usd_value:.2f} 达到或超过阈值 ${self.warning_threshold:.2f}", level="WARNING")
+                            
+                            # 发出信号请求用户确认
+                            self.confirm_withdrawal_signal.emit(coin, network, random_amount_quantized, addr, None, True)
+                            
+                            # 清除事件标志并等待
+                            self.withdrawal_confirm_event.clear()
+                            self.log_message(f"  -> 等待用户确认大额提币 (地址: {self._mask_addresses_in_text(addr)}, 金额: {random_amount_quantized} {coin})...", level="INFO")
+                            self.withdrawal_confirm_event.wait() # 线程在此阻塞直到事件被设置
+
+                            if not self.user_agreed_to_this_withdrawal:
+                                self.log_message(f"  -> 用户未确认或取消了大额提币，跳过地址 {address_display_index} ({self._mask_addresses_in_text(addr)})", level="WARNING")
+                                processed_count += 1
+                                continue # 跳到下一个地址
+                            else:
+                                self.log_message(f"  -> 用户已确认大额提币，继续执行对地址 {self._mask_addresses_in_text(addr)} 的提币操作。", level="INFO")
+                    except Exception as e_large_check:
+                         self.log_message(f"大额提币检查计算时出错: {e_large_check}", level="WARNING")
+
+                # --- 3. 检查余额 (考虑手续费) ---
                 try:
                     balance_str = self.current_exchange_api.get_balance(coin)
                     if balance_str is None:
@@ -1901,29 +2276,22 @@ class WithdrawalHelper(QMainWindow):
                      processed_count += 1
                      continue
 
-                # --- 3. 大额提币检查 (简化版，仅日志警告) ---
-                if self.enable_warning and usd_price is not None:
-                    try:
-                        usd_value = random_amount_quantized * usd_price
-                        if usd_value >= Decimal(str(self.warning_threshold)):
-                            self.log_message(f"警告：地址 {address_display_index} 的提币金额 ${usd_value:.2f} 达到或超过阈值 ${self.warning_threshold:.2f}", level="WARNING")
-                            # TODO: 未来可在此处加入信号和等待逻辑以进行用户确认
-                            # self.confirm_withdrawal_signal.emit(coin, network, random_amount, current_address, None, True)
-                            # wait for self.withdrawal_confirmation_result signal...
-                    except Exception as e_large_check:
-                         self.log_message(f"大额提币检查计算时出错: {e_large_check}", level="WARNING")
-
                 # --- 4. 构造API地址参数并执行实际提币API调用 ---
                 address_for_api = addr
                 if self.current_exchange_name == 'OKX':
-                    # 检查地址是否为EVM类型 (以0x开头，长度通常为42)
+                    # 检查地址类型
                     is_evm_address = addr.startswith('0x') and len(addr) == 42
+                    is_sol_address = not is_evm_address and len(addr) >= 32 and len(addr) <= 44
                     
                     if is_evm_address:
                         # 对于EVM地址，OKX API可能期望纯地址，忽略Excel中的label
                         self.log_message(f"  -> OKX EVM地址: 使用原始地址 {self._mask_addresses_in_text(addr)} (忽略Excel label: {label})", level="DEBUG")
                         address_for_api = addr 
-                    elif label: # 非EVM地址，且Excel中提供了label
+                    elif is_sol_address and label:
+                        # 对于SOL地址，如果有label，使用 address:label 格式
+                        address_for_api = f"{addr}:{label}"
+                        self.log_message(f"  -> OKX SOL地址: 使用地址:label格式: {self._mask_addresses_in_text(address_for_api)}", level="DEBUG")
+                    elif label: # 其他非EVM地址，且Excel中提供了label
                         address_for_api = f"{addr}:{label}"
                         self.log_message(f"  -> OKX 非EVM地址: 使用地址:label格式: {self._mask_addresses_in_text(address_for_api)}", level="DEBUG")
                     # else: 非EVM地址且无label，address_for_api 保持原始 addr
@@ -2000,8 +2368,13 @@ class WithdrawalHelper(QMainWindow):
         if hasattr(self, 'start_button'): self.start_button.setEnabled(True)
         if hasattr(self, 'stop_button'): self.stop_button.setEnabled(False)
         # 重置进度条和等待条 (虽然线程finally里也做了，这里再做一次确保UI更新)
-        self.progress_update_signal.emit(0, "进度: 0%")
+        self.update_progress(0)  # Reset progress
         self.wait_update_signal.emit(0, "等待: 0秒")
+
+    def show_donation_dialog(self):
+        """显示打赏对话框"""
+        dialog = DonationDialog(self)
+        dialog.exec()
 
 if __name__ == "__main__":
     # 创建 QApplication 实例
