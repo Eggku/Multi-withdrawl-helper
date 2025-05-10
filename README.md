@@ -2,8 +2,8 @@
 
 ## 功能特点
 
-- 支持多交易所（Binance、OKX等）批量提币
-- 支持多币种（ETH、USDT、USDC、SUI、G、SOL等）和多网络
+- 支持多交易所（Binance、OKX）批量提币
+- 支持多币种（ETH、USDT、USDC、SUI、G、SOL）和多网络
 - 自动识别地址类型，无需手动选择
 - OKX特殊地址格式（如SOL、SUI等）自动处理
 - 实时显示提币金额的美元估值（蓝色高亮）
