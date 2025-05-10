@@ -77,24 +77,39 @@ def check_and_install_pyinstaller():
             return False
 
 def install_requirements():
-    """Installs dependencies from requirements.txt."""
-    print(f"\n--- Checking and Installing Dependencies from {REQUIREMENTS_FILE_NAME} ---")
-    if not REQUIREMENTS_FILE_PATH.exists():
-        print(f"Warning: {REQUIREMENTS_FILE_NAME} not found. Skipping dependency installation.")
-        print("Please ensure all necessary packages (PyQt6, pandas, python-binance, okx, etc.) are installed.")
-        return True # Continue build, assuming user managed dependencies
-
-    ret_code, _, err_msg = run_command([sys.executable, "-m", "pip", "install", "-r", str(REQUIREMENTS_FILE_PATH)])
-    if ret_code == 0:
-        print("Dependencies installed/updated successfully.")
-        return True
-    else:
-        print(f"Failed to install dependencies. Error: {err_msg}")
-        # Decide if this should be a fatal error
-        # return False
+    """安装项目依赖"""
+    print("\n--- Checking and Installing Dependencies from requirements.txt ---\n")
+    
+    try:
+        # 首先安装 PyInstaller
+        print("Installing PyInstaller first...")
+        subprocess.run([sys.executable, "-m", "pip", "install", "pyinstaller>=6.0.0"], 
+                      check=True, capture_output=True, text=True)
+        
+        # 然后安装其他依赖
+        print("\nInstalling other dependencies...")
+        result = subprocess.run(
+            [sys.executable, "-m", "pip", "install", "-r", "requirements.txt"],
+            capture_output=True,
+            text=True
+        )
+        
+        if result.returncode != 0:
+            print("\n--- stdout ---")
+            print(result.stdout)
+            print("\n--- stderr ---")
+            print(result.stderr)
+            print(f"\nFailed to install dependencies. Error: {result.stderr}")
+            print("\nContinuing build, but it may fail or the EXE might not work correctly.")
+        else:
+            print("All dependencies installed successfully.")
+            
+    except subprocess.CalledProcessError as e:
+        print(f"Error installing dependencies: {str(e)}")
         print("Continuing build, but it may fail or the EXE might not work correctly.")
-        return True
-
+    except Exception as e:
+        print(f"Unexpected error during dependency installation: {str(e)}")
+        print("Continuing build, but it may fail or the EXE might not work correctly.")
 
 def clean_previous_build():
     """Removes previous build and distribution directories."""
