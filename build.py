@@ -286,8 +286,8 @@ def build_executable():
     pyinstaller_command = [
         pyinstaller_path,
         "--name", APP_NAME,
-        "--onefile",
-        "--windowed",
+        # "--onefile",  # 暂时移除，改为目录模式打包
+        # "--windowed", # 暂时移除，改为控制台模式
         "--clean",
         "--log-level", "DEBUG",
         "--distpath", str(DIST_APP_DIR),
