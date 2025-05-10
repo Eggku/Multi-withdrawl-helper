@@ -36,17 +36,17 @@
     *   确保您已安装 Python。**强烈建议使用 Python 3.12.5 版本进行构建**，这是经过测试并成功打包的版本。您可以从 [Python官网](https://www.python.org/downloads/) 下载。
     *   安装 Python 时，请确保勾选 "Add Python to PATH" (将 Python 添加到环境变量)。
 
-3.  **安装项目依赖**
-    *   打开命令行工具 (如 Command Prompt 或 PowerShell)，进入项目根目录。
-    *   运行以下命令安装所需的依赖包：
+3.  **关于项目依赖**
+    *   在您执行第 4 步通过 `python build.py` 构建可执行文件时，该脚本会自动尝试从 `requirements.txt` 文件安装所有必需的项目依赖项（包括 PyInstaller）。
+    *   因此，通常情况下，您**无需手动执行**下面的 `pip install` 命令，可以直接进行到第 4 步。
+    *   **可选操作**：如果您希望在运行 `build.py` 之前预先安装依赖，或者如果在 `build.py` 自动安装依赖的过程中遇到网络问题或错误，您可以手动打开命令行工具 (如 Command Prompt 或 PowerShell)，进入项目根目录，然后运行：
       ```bash
       pip install -r requirements.txt
       ```
-    *   如果安装速度慢或遇到问题，可以尝试使用国内镜像源：
+    *   如果手动安装时下载速度较慢，可以尝试使用国内镜像源：
       ```bash
       pip install -r requirements.txt -i https://pypi.tuna.tsinghua.edu.cn/simple
       ```
-    *   `build.py` 脚本也会在构建前尝试检查并安装 PyInstaller。
 
 4.  **构建可执行文件 (.exe)**
     *   在项目根目录下，运行 `build.py` 脚本：
