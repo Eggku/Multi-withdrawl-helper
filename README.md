@@ -25,7 +25,7 @@
 ![image](https://github.com/user-attachments/assets/11952997-dd5d-4311-a085-8145acdb4950)
 ## 联系方式
 https://x.com/StayrealLoL
-https://t.me/Monsterjane 
+                           https://t.me/Monsterjane 
 ## 系统要求
 
 - Windows 10/11
