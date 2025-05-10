@@ -20,8 +20,8 @@
     <img src="https://github.com/user-attachments/assets/4403f22d-3f7c-45a2-a319-360d3037a69f" alt="image" width="200"/>
     <img src="https://github.com/user-attachments/assets/5b91a5fa-f008-4566-b3ed-4ccc3b06fd68" alt="image" width="200"/>
     <img src="https://github.com/user-attachments/assets/a83c727b-5a68-4061-8b75-4a8f3e90e5a1" alt="image" width="200"/>
-    <img src="https://github.com/user-attachments/assets/18e32401-a4bf-4271-a24a-e11475766860" alt="image" width="200"/>
-    <img src="https://github.com/user-attachments/assets/bbc026aa-7d25-4220-ae5d-92f73a07f6ad" alt="image" width="200"/>
+    <img src="https://github.com/user-attachments/assets/18e32401-a4bf-4271-a24a-e11475766860" alt="image" width="300"/>
+    <img src="https://github.com/user-attachments/assets/bbc026aa-7d25-4220-ae5d-92f73a07f6ad" alt="image" width="300"/>
 
 ## 系统要求
 
@@ -102,8 +102,6 @@
 - 大额提币需要二次确认
 - 请确保网络稳定，**提币时的ip需与交易所设置的白名单一致（建议设置）**，避免提币失败
 - OKX部分币种（如SOL、SUI）需使用"地址:标签"格式，系统已自动处理
-- ![image](https://github.com/user-attachments/assets/bbc026aa-7d25-4220-ae5d-92f73a07f6ad)
-
 
 ## 更新日志
 
