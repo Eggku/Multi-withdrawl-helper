@@ -19,49 +19,46 @@
 ## 系统要求
 
 - Windows 10/11
-- Python 3.8+
+- Python 3.12.5 (用于构建可执行文件，建议使用此版本以获得最佳兼容性)
 - 交易所API密钥（需开启提币权限）
 
-## 使用方式
+## 使用方式 (通过源代码构建并运行)
 
-### 方式一：直接运行源代码（适合开发者）
+为了确保代码的透明性和安全性，我们推荐您通过以下步骤自行构建并运行本工具：
 
-1. 克隆或下载项目到本地
-2. 安装依赖包：
-```bash
-# 创建并激活虚拟环境（推荐）
-python -m venv venv
-.\venv\Scripts\activate  # Windows
-source venv/bin/activate  # Linux/Mac
+1.  **克隆或下载项目源代码**
+    *   您可以从本 GitHub 仓库下载最新的源代码压缩包，或使用 Git 克隆：
+      ```bash
+      git clone https://github.com/l445698714/Multi-withdrawl-helper.git
+      cd Multi-withdrawl-helper
+      ```
 
-# 安装依赖
-pip install -r requirements.txt
+2.  **安装 Python 环境**
+    *   确保您已安装 Python。**强烈建议使用 Python 3.12.5 版本进行构建**，这是经过测试并成功打包的版本。您可以从 [Python官网](https://www.python.org/downloads/) 下载。
+    *   安装 Python 时，请确保勾选 "Add Python to PATH" (将 Python 添加到环境变量)。
 
-# 如果安装过程中遇到问题，可以尝试以下方法：
-# 1. 更新pip
-python -m pip install --upgrade pip
+3.  **安装项目依赖**
+    *   打开命令行工具 (如 Command Prompt 或 PowerShell)，进入项目根目录。
+    *   运行以下命令安装所需的依赖包：
+      ```bash
+      pip install -r requirements.txt
+      ```
+    *   如果安装速度慢或遇到问题，可以尝试使用国内镜像源：
+      ```bash
+      pip install -r requirements.txt -i https://pypi.tuna.tsinghua.edu.cn/simple
+      ```
+    *   `build.py` 脚本也会在构建前尝试检查并安装 PyInstaller。
 
-# 2. 单独安装可能出问题的包
-pip install okx
-pip install python-binance
-pip install PyQt6
+4.  **构建可执行文件 (.exe)**
+    *   在项目根目录下，运行 `build.py` 脚本：
+      ```bash
+      python build.py
+      ```
+    *   构建成功后，可执行文件 `MultiWithdrawalHelper.exe` 将会生成在项目根目录下的 `dist_packages/MultiWithdrawalHelper_vX.X.X/` 文件夹内 (X.X.X 代表当前版本号)。
 
-# 3. 如果安装速度慢，可以使用国内镜像
-pip install -r requirements.txt -i https://pypi.tuna.tsinghua.edu.cn/simple
-```
-
-3. 运行程序：
-```bash
-python main_qt.py
-```
-### 方式二：自行打包（适合高级用户）
-
-1. 克隆或下载项目到本地
-2. 运行build.py进行打包：
-```bash
-python build.py
-```
-3. 打包完成后，可执行文件将生成在dist_packages目录下
+5.  **运行程序**
+    *   进入上述 `dist_packages/MultiWithdrawalHelper_vX.X.X/` 文件夹。
+    *   双击运行 `MultiWithdrawalHelper.exe` 文件。
 
 ## 使用说明
 
