@@ -2,8 +2,8 @@
 
 ## 功能特点
 
-- 支持多交易所（Binance、OKX等）批量提币
-- 支持多币种（ETH、USDT、USDC、SUI、G、SOL等）和多网络
+- 支持多交易所（Binance、OKX）批量提币
+- 支持多币种（ETH、USDT、USDC、SUI、G、SOL）和多网络
 - 自动识别地址类型，无需手动选择
 - OKX特殊地址格式（如SOL、SUI等）自动处理
 - 实时显示提币金额的美元估值（蓝色高亮）
@@ -54,14 +54,7 @@ pip install -r requirements.txt -i https://pypi.tuna.tsinghua.edu.cn/simple
 ```bash
 python main_qt.py
 ```
-
-### 方式二：使用打包好的可执行文件（适合普通用户）
-
-1. 下载最新版本的发布包（包含.exe文件）
-2. 直接运行MultiWithdrawalHelper.exe
-3. 首次运行时会自动安装所需依赖
-
-### 方式三：自行打包（适合高级用户）
+### 方式二：自行打包（适合高级用户）
 
 1. 克隆或下载项目到本地
 2. 运行build.py进行打包：
@@ -105,6 +98,8 @@ python build.py
 - 大额提币需要二次确认
 - 请确保网络稳定，避免提币失败
 - OKX部分币种（如SOL、SUI）需使用"地址:标签"格式，系统已自动处理
+- ![image](https://github.com/user-attachments/assets/bbc026aa-7d25-4220-ae5d-92f73a07f6ad)
+
 
 ## 更新日志
 
