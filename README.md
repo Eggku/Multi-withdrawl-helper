@@ -23,8 +23,9 @@
 ## 如果您觉得这个工具对您有帮助，欢迎打赏支持开发者继续改进和分享更多小工具。
 ![image](https://github.com/user-attachments/assets/b7810000-78d3-4c6b-a10d-cee4d22d6845)
 ![image](https://github.com/user-attachments/assets/11952997-dd5d-4311-a085-8145acdb4950)
-**https://x.com/StayrealLoL
-https://t.me/Monsterjane **
+## 联系方式
+https://x.com/StayrealLoL
+https://t.me/Monsterjane 
 ## 系统要求
 
 - Windows 10/11
