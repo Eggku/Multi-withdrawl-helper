@@ -59,6 +59,34 @@ def run_command(command: list[str], cwd: Path | None = None) -> tuple[int, str, 
         print(f"An unexpected error occurred while running command: {e}")
         return -1, "", str(e)
 
+def get_pyinstaller_path():
+    """获取 PyInstaller 可执行文件的完整路径"""
+    try:
+        # 获取 Python 安装目录
+        python_dir = os.path.dirname(sys.executable)
+        
+        # 检查 Scripts 目录
+        scripts_dir = os.path.join(python_dir, "Scripts")
+        pyinstaller_path = os.path.join(scripts_dir, "pyinstaller.exe")
+        
+        if os.path.exists(pyinstaller_path):
+            return pyinstaller_path
+            
+        # 检查用户目录
+        user_site = os.path.join(os.path.expanduser("~"), "AppData", "Local", "Packages", 
+                               "PythonSoftwareFoundation.Python.3.11_qbz5n2kfra8p0", 
+                               "LocalCache", "local-packages", "Python311", "Scripts")
+        pyinstaller_path = os.path.join(user_site, "pyinstaller.exe")
+        
+        if os.path.exists(pyinstaller_path):
+            return pyinstaller_path
+            
+        # 如果都找不到，返回 None
+        return None
+    except Exception as e:
+        print(f"Error finding PyInstaller path: {e}")
+        return None
+
 def check_and_install_pyinstaller():
     """Checks if PyInstaller is installed, and installs it if not."""
     print("\n--- Checking PyInstaller ---")
@@ -67,61 +95,38 @@ def check_and_install_pyinstaller():
         import PyInstaller
         print(f"PyInstaller found (Version: {PyInstaller.__version__}).")
         
-        # 检查 pyinstaller 命令是否在 PATH 中
-        try:
-            subprocess.run(["pyinstaller", "--version"], 
-                         capture_output=True, 
-                         check=True)
-            print("PyInstaller command is available in PATH.")
+        # 获取 PyInstaller 路径
+        pyinstaller_path = get_pyinstaller_path()
+        if pyinstaller_path and os.path.exists(pyinstaller_path):
+            print(f"PyInstaller executable found at: {pyinstaller_path}")
             return True
-        except (subprocess.CalledProcessError, FileNotFoundError):
-            print("PyInstaller is installed but not in PATH. Adding to PATH...")
+        else:
+            print("PyInstaller is installed but executable not found. Attempting to install...")
             
-            # 获取 Python 脚本目录
-            python_scripts = os.path.join(os.path.dirname(sys.executable), "Scripts")
-            if python_scripts not in os.environ["PATH"]:
-                os.environ["PATH"] = python_scripts + os.pathsep + os.environ["PATH"]
-            
-            # 验证是否可用
-            try:
-                subprocess.run(["pyinstaller", "--version"], 
-                             capture_output=True, 
-                             check=True)
-                print("PyInstaller command is now available.")
-                return True
-            except (subprocess.CalledProcessError, FileNotFoundError):
-                print("Failed to make PyInstaller available in PATH.")
-                return False
-                
     except ImportError:
         print("PyInstaller not found. Attempting to install...")
-        try:
-            # 使用完整路径安装
-            subprocess.run([sys.executable, "-m", "pip", "install", "--user", "pyinstaller"],
-                         check=True,
-                         capture_output=True)
-            
-            # 获取 Python 脚本目录
-            python_scripts = os.path.join(os.path.dirname(sys.executable), "Scripts")
-            if python_scripts not in os.environ["PATH"]:
-                os.environ["PATH"] = python_scripts + os.pathsep + os.environ["PATH"]
-            
-            # 验证安装
-            try:
-                subprocess.run(["pyinstaller", "--version"], 
-                             capture_output=True, 
-                             check=True)
-                print("PyInstaller installed and available in PATH.")
-                return True
-            except (subprocess.CalledProcessError, FileNotFoundError):
-                print("PyInstaller installed but not in PATH. Please add Python Scripts directory to PATH.")
-                return False
-                
-        except subprocess.CalledProcessError as e:
-            print(f"Failed to install PyInstaller. Error: {e}")
+    
+    try:
+        # 使用 pip 安装
+        print("Installing PyInstaller...")
+        subprocess.run([sys.executable, "-m", "pip", "install", "--user", "pyinstaller"],
+                      check=True,
+                      capture_output=True)
+        
+        # 再次检查路径
+        pyinstaller_path = get_pyinstaller_path()
+        if pyinstaller_path and os.path.exists(pyinstaller_path):
+            print(f"PyInstaller installed and found at: {pyinstaller_path}")
+            return True
+        else:
+            print("PyInstaller installed but executable not found.")
             return False
+            
+    except subprocess.CalledProcessError as e:
+        print(f"Failed to install PyInstaller. Error: {e}")
+        return False
     except Exception as e:
-        print(f"Unexpected error checking PyInstaller: {e}")
+        print(f"Unexpected error: {e}")
         return False
 
 def install_requirements():
@@ -263,15 +268,10 @@ def build_executable():
         print(f"Error: Main script '{MAIN_SCRIPT_PATH}' not found. Aborting.")
         return False
 
-    # 获取 PyInstaller 完整路径
-    try:
-        python_scripts = os.path.join(os.path.dirname(sys.executable), "Scripts")
-        pyinstaller_path = os.path.join(python_scripts, "pyinstaller.exe")
-        if not os.path.exists(pyinstaller_path):
-            print(f"Error: PyInstaller not found at {pyinstaller_path}")
-            return False
-    except Exception as e:
-        print(f"Error finding PyInstaller: {e}")
+    # 获取 PyInstaller 路径
+    pyinstaller_path = get_pyinstaller_path()
+    if not pyinstaller_path or not os.path.exists(pyinstaller_path):
+        print("Error: PyInstaller executable not found.")
         return False
 
     pyinstaller_command = [
