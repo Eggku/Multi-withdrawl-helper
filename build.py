@@ -10,6 +10,7 @@ import sys
 import subprocess
 import shutil
 from pathlib import Path
+import PyQt6 # <--- 添加 PyQt6 导入以便获取路径
 
 # --- Configuration ---
 APP_NAME = "MultiWithdrawalHelper"
@@ -20,7 +21,7 @@ REQUIREMENTS_FILE_NAME = "requirements.txt"
 README_FILE_NAME = f"README_使用说明_{APP_VERSION}.txt"
 
 # --- Paths ---
-SCRIPT_DIR = Path(__file__).resolve().parent
+SCRIPT_DIR = Path(__file__).resolve().parent # <--- 确保 SCRIPT_DIR 在 PyQt6 导入之后，以防万一
 MAIN_SCRIPT_PATH = SCRIPT_DIR / MAIN_SCRIPT_NAME
 ICON_FILE_PATH = SCRIPT_DIR / ICON_FILE_NAME
 REQUIREMENTS_FILE_PATH = SCRIPT_DIR / REQUIREMENTS_FILE_NAME
@@ -30,6 +31,14 @@ DIST_ROOT_DIR = SCRIPT_DIR / "dist_packages"  # Root for all packaged versions
 DIST_APP_DIR = DIST_ROOT_DIR / f"{APP_NAME}_v{APP_VERSION}" # Versioned output directory
 BUILD_TEMP_DIR = SCRIPT_DIR / "build_temp"  # PyInstaller temporary work directory
 SPEC_FILE_NAME = f"{APP_NAME}.spec"
+
+# --- PyInstaller Paths (获取 PyQt6 的实际路径) ---
+PYQT6_PACKAGE_DIR = Path(PyQt6.__file__).resolve().parent
+PYQT6_QT_DIR = PYQT6_PACKAGE_DIR / "Qt6"
+PYQT6_QT_BIN_DIR = PYQT6_QT_DIR / "bin"
+PYQT6_QT_PLUGINS_DIR = PYQT6_QT_DIR / "plugins"
+PYQT6_QT_PLATFORMS_DIR = PYQT6_QT_PLUGINS_DIR / "platforms"
+PYQT6_QT_TRANSLATIONS_DIR = PYQT6_QT_DIR / "translations"
 
 def run_command(command: list[str], cwd: Path | None = None) -> tuple[int, str, str]:
     """Runs a subprocess command and returns exit code, stdout, and stderr."""
@@ -284,10 +293,28 @@ def build_executable():
         "--workpath", str(BUILD_TEMP_DIR),
         "--specpath", str(SCRIPT_DIR),
         "--exclude-module", "PyQt5",
-        "--collect-data", "PyQt6",  # 收集 PyQt6 的数据文件
     ]
 
-    # PyQt6.sip 也是必须的，--collect-data PyQt6 应该会处理，但显式添加也无妨
+    # 手动添加 PyQt6 的核心 DLLs 和插件
+    if PYQT6_QT_BIN_DIR.is_dir():
+        pyinstaller_command.extend(['--add-data', f'{str(PYQT6_QT_BIN_DIR)}{os.pathsep}.'])
+        print(f"Adding PyQt6 binaries from: {PYQT6_QT_BIN_DIR} to bundle root")
+    else:
+        print(f"Warning: PyQt6 Qt6/bin directory not found at {PYQT6_QT_BIN_DIR}")
+
+    if PYQT6_QT_PLATFORMS_DIR.is_dir():
+        pyinstaller_command.extend(['--add-data', f'{str(PYQT6_QT_PLATFORMS_DIR)}{os.pathsep}platforms'])
+        print(f"Adding PyQt6 platform plugins from: {PYQT6_QT_PLATFORMS_DIR} to platforms/")
+    else:
+        print(f"Warning: PyQt6 Qt6/plugins/platforms directory not found at {PYQT6_QT_PLATFORMS_DIR}")
+
+    if PYQT6_QT_TRANSLATIONS_DIR.is_dir():
+        pyinstaller_command.extend(['--add-data', f'{str(PYQT6_QT_TRANSLATIONS_DIR)}{os.pathsep}translations'])
+        print(f"Adding PyQt6 translations from: {PYQT6_QT_TRANSLATIONS_DIR} to translations/")
+    else:
+        print(f"Warning: PyQt6 Qt6/translations directory not found at {PYQT6_QT_TRANSLATIONS_DIR}")
+
+    # PyQt6.sip 也是必须的
     pyinstaller_command.extend(["--hidden-import", "PyQt6.sip"])
 
     if ICON_FILE_PATH.exists():
