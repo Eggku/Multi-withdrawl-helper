@@ -14,12 +14,12 @@
 - 保存多交易所提币历史记录
 - 支持大额提币二次确认
 - 自动保存上次使用的地址文件
-![image](https://github.com/user-attachments/assets/f61c4c88-baa8-4dbf-8647-599fcebbf9a7)
-![image](https://github.com/user-attachments/assets/a83c727b-5a68-4061-8b75-4a8f3e90e5a1)
-![image](https://github.com/user-attachments/assets/4403f22d-3f7c-45a2-a319-360d3037a69f)
-![image](https://github.com/user-attachments/assets/5b91a5fa-f008-4566-b3ed-4ccc3b06fd68)
-![image](https://github.com/user-attachments/assets/df73399c-a697-430c-9f98-a77f1945e8a7)
-![image](https://github.com/user-attachments/assets/18e32401-a4bf-4271-a24a-e11475766860)
+    <img src="https://github.com/user-attachments/assets/f61c4c88-baa8-4dbf-8647-599fcebbf9a7" alt="image" width="600"/>
+    <img src="https://github.com/user-attachments/assets/a83c727b-5a68-4061-8b75-4a8f3e90e5a1" alt="image" width="600"/>
+    <img src="https://github.com/user-attachments/assets/4403f22d-3f7c-45a2-a319-360d3037a69f" alt="image" width="600"/>
+    <img src="https://github.com/user-attachments/assets/5b91a5fa-f008-4566-b3ed-4ccc3b06fd68" alt="image" width="600"/>
+    <img src="https://github.com/user-attachments/assets/df73399c-a697-430c-9f98-a77f1945e8a7" alt="image" width="600"/>
+    <img src="https://github.com/user-attachments/assets/18e32401-a4bf-4271-a24a-e11475766860" alt="image" width="600"/>
 
 ## 系统要求
 
