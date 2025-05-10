@@ -20,7 +20,7 @@
     <img src="https://github.com/user-attachments/assets/18e32401-a4bf-4271-a24a-e11475766860" alt="image" width="300"/>
     <img src="https://github.com/user-attachments/assets/bbc026aa-7d25-4220-ae5d-92f73a07f6ad" alt="image" width="300"/>
 
-## 如果您觉得这个工具对您有帮助，欢迎打赏支持开发者继续改进和分享更多小工具。
+## 如果您觉得这个工具对您有帮助，可以请我喝杯蜜雪冰城~。
 ![image](https://github.com/user-attachments/assets/b7810000-78d3-4c6b-a10d-cee4d22d6845)
 ![image](https://github.com/user-attachments/assets/11952997-dd5d-4311-a085-8145acdb4950)
 ## 联系方式
