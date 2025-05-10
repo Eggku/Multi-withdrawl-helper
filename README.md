@@ -134,7 +134,4 @@ https://x.com/StayrealLoL https://t.me/MONSTERJANE0331
 
 MIT License
 
-## 联系方式
 
-https://x.com/StayrealLoL
-https://t.me/Monsterjane 
