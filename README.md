@@ -13,7 +13,7 @@
 - 支持大额提币二次确认
 
 ## 软件截图
-  
+N
     <img src="https://github.com/user-attachments/assets/f61c4c88-baa8-4dbf-8647-599fcebbf9a7" alt="image" width="200"/>
     <img src="https://github.com/user-attachments/assets/df73399c-a697-430c-9f98-a77f1945e8a7" alt="image" width="200"/>
     <img src="https://github.com/user-attachments/assets/4403f22d-3f7c-45a2-a319-360d3037a69f" alt="image" width="200"/>
