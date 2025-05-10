@@ -41,17 +41,18 @@ def run_command(command: list[str], cwd: Path | None = None) -> tuple[int, str, 
             stderr=subprocess.PIPE,
             text=True,
             encoding='utf-8',
+            errors='replace',  # 使用 replace 处理无法解码的字符
             cwd=cwd if cwd else SCRIPT_DIR,
-            shell=False # Safer, relies on command being in PATH or absolute
+            shell=False
         )
         stdout, stderr = process.communicate()
         if stdout:
             print("--- stdout ---")
             print(stdout)
-        if stderr and process.returncode != 0 : # Only print stderr if there was an error
+        if stderr and process.returncode != 0:
             print("--- stderr ---")
             print(stderr)
-        return process.returncode, stdout, stderr
+        return process.returncode, stdout or "", stderr or ""  # 确保返回值不为 None
     except FileNotFoundError:
         print(f"Error: Command '{command[0]}' not found. Is it in your PATH?")
         return -1, "", f"Command '{command[0]}' not found."
@@ -275,7 +276,7 @@ def build_executable():
         return False
 
     pyinstaller_command = [
-        pyinstaller_path,  # 使用完整路径
+        pyinstaller_path,
         "--name", APP_NAME,
         "--onefile",
         "--windowed",
@@ -287,7 +288,6 @@ def build_executable():
 
     if ICON_FILE_PATH.exists():
         pyinstaller_command.extend(["--icon", str(ICON_FILE_PATH)])
-        # Also add as data if QIcon('app.ico') is used directly
         pyinstaller_command.extend(["--add-data", f"{ICON_FILE_PATH}{os.pathsep}."])
     else:
         print(f"Warning: Icon file '{ICON_FILE_PATH}' not found. Using default icon.")
@@ -349,18 +349,19 @@ def build_executable():
 
     pyinstaller_command.append(str(MAIN_SCRIPT_PATH)) # Main script at the end
 
-    ret_code, _, err_msg = run_command(pyinstaller_command)
+    ret_code, stdout, stderr = run_command(pyinstaller_command)
 
     if ret_code == 0:
         print(f"PyInstaller build successful. Executable at: {DIST_APP_DIR / (APP_NAME + '.exe')}")
         return True
     else:
         print(f"PyInstaller build failed. Exit code: {ret_code}")
-        if "UPX is not available." in err_msg or "UPX is not available." in _: # stdout might also contain it
-             print("Note: UPX (executable packer) was not found. The EXE is larger but should still work.")
-             print("If you want smaller EXEs, install UPX and ensure it's in your system PATH.")
-             # If UPX not found is the *only* error, we might consider it a soft fail or success.
-             # For now, any non-zero exit code is a failure.
+        if stdout and "UPX is not available." in stdout:
+            print("Note: UPX (executable packer) was not found. The EXE is larger but should still work.")
+            print("If you want smaller EXEs, install UPX and ensure it's in your system PATH.")
+        if stderr:
+            print("Error details:")
+            print(stderr)
         return False
 
 def main_build_process():
