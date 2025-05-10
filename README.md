@@ -98,6 +98,8 @@ python build.py
 - 大额提币需要二次确认
 - 请确保网络稳定，避免提币失败
 - OKX部分币种（如SOL、SUI）需使用"地址:标签"格式，系统已自动处理
+- ![image](https://github.com/user-attachments/assets/bbc026aa-7d25-4220-ae5d-92f73a07f6ad)
+
 
 ## 更新日志
 
