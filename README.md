@@ -1,7 +1,5 @@
 # 多交易所提币助手
 
-一个基于PyQt6开发的多交易所提币工具，支持Binance、OKX等主流交易所，具备批量提币、自动识别地址类型、进度N/N显示、历史记录等功能。
-
 ## 功能特点
 
 - 支持多交易所（Binance、OKX等）批量提币
@@ -17,7 +15,6 @@
 - 保存多交易所提币历史记录
 - 支持大额提币二次确认
 - 自动保存上次使用的地址文件
-- "支持开发者"按钮采用蓝色字体，风格统一
 
 ## 系统要求
 
@@ -25,13 +22,53 @@
 - Python 3.8+
 - 交易所API密钥（需开启提币权限）
 
-## 安装步骤
+## 使用方式
+
+### 方式一：直接运行源代码（适合开发者）
 
 1. 克隆或下载项目到本地
 2. 安装依赖包：
 ```bash
+# 创建并激活虚拟环境（推荐）
+python -m venv venv
+.\venv\Scripts\activate  # Windows
+source venv/bin/activate  # Linux/Mac
+
+# 安装依赖
 pip install -r requirements.txt
+
+# 如果安装过程中遇到问题，可以尝试以下方法：
+# 1. 更新pip
+python -m pip install --upgrade pip
+
+# 2. 单独安装可能出问题的包
+pip install okx
+pip install python-binance
+pip install PyQt6
+
+# 3. 如果安装速度慢，可以使用国内镜像
+pip install -r requirements.txt -i https://pypi.tuna.tsinghua.edu.cn/simple
 ```
+
+3. 运行程序：
+```bash
+python main_qt.py
+```
+
+### 方式二：使用打包好的可执行文件（适合普通用户）
+
+1. 下载最新版本的发布包（包含.exe文件）
+2. 直接运行MultiWithdrawalHelper.exe
+3. 首次运行时会自动安装所需依赖
+
+### 方式三：自行打包（适合高级用户）
+
+1. 克隆或下载项目到本地
+2. 运行build.py进行打包：
+```bash
+python build.py
+```
+3. 打包完成后，可执行文件将生成在dist_packages目录下
 
 ## 使用说明
 
