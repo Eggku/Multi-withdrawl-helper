@@ -24,7 +24,7 @@
 ![image](https://github.com/user-attachments/assets/b7810000-78d3-4c6b-a10d-cee4d22d6845)
 ![image](https://github.com/user-attachments/assets/11952997-dd5d-4311-a085-8145acdb4950)
 ## 联系方式
-https://x.com/StayrealLoL https://telegram.me/monsterjane0331
+https://x.com/StayrealLoL https://telegram.me/MONSTERJANE0331
 ![image](https://github.com/user-attachments/assets/60ef9967-420f-4fab-a220-7292939fc31e)
 
 ## 系统要求
