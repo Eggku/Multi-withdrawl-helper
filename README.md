@@ -21,6 +21,7 @@
     <img src="https://github.com/user-attachments/assets/5b91a5fa-f008-4566-b3ed-4ccc3b06fd68" alt="image" width="200"/>
     <img src="https://github.com/user-attachments/assets/a83c727b-5a68-4061-8b75-4a8f3e90e5a1" alt="image" width="200"/>
     <img src="https://github.com/user-attachments/assets/18e32401-a4bf-4271-a24a-e11475766860" alt="image" width="200"/>
+    <img src="https://github.com/user-attachments/assets/bbc026aa-7d25-4220-ae5d-92f73a07f6ad" alt="image" width="200"/>
 
 ## 系统要求
 
