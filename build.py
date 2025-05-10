@@ -289,6 +289,7 @@ def build_executable():
         "--onefile",
         "--windowed",
         "--clean",
+        "--log-level", "DEBUG",
         "--distpath", str(DIST_APP_DIR),
         "--workpath", str(BUILD_TEMP_DIR),
         "--specpath", str(SCRIPT_DIR),
