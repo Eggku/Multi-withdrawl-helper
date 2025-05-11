@@ -1,6 +1,31 @@
-# 多交易所提币助手
+<div align="center">
 
-## 功能特点
+# 多交易所提币助手 V1.1.0
+
+[![Python](https://img.shields.io/badge/Python-3.12.5%2B-3776AB.svg?style=flat&logo=python&logoColor=white)](https://www.python.org/downloads/release/python-3125/)
+[![Windows](https://img.shields.io/badge/Windows-10%2B-0078D6.svg?style=flat&logo=windows&logoColor=white)](https://www.microsoft.com/windows)
+[![License](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+
+**作者：l445698714**
+<br />
+[![GitHub](https://img.shields.io/badge/GitHub-l445698714-lightgrey.svg?style=flat&logo=github&logoColor=black)](https://github.com/l445698714)
+[![X (Twitter)](https://img.shields.io/badge/X_StayrealLoL-1DA1F2.svg?style=flat&logo=x&logoColor=white)](https://x.com/StayrealLoL)
+
+</div>
+
+> ## ⚠️ 免责声明
+>
+> 1. 本工具仅供学习和研究使用，不构成任何投资建议。
+> 2. 使用本工具进行提币操作时，请确保遵守各交易所平台的相关规则和政策。
+> 3. 由于网络延迟、API限制等原因，提币操作可能失败，本工具不保证100%成功率。
+> 4. 使用本工具造成的任何损失（包括但不限于资金损失、账户限制等），开发者不承担任何责任。
+> 5. 请勿将本工具用于任何非法用途，包括但不限于洗钱、逃税等违法行为。
+> 6. 使用本工具即表示您同意承担所有相关风险和责任。
+
+## ❇️ 工具介绍
+多交易所提币助手是一款旨在帮助用户高效、安全地进行批量提币操作的工具。它支持主流交易所如Binance和OKX，能够处理多种加密货币和网络，并提供随机化提币参数、地址验证、美元估值等实用功能，特别适合需要管理多个地址和进行频繁小额提币的用户。
+
+## ❇️ 功能特性
 
 - 支持多交易所（Binance、OKX）批量**随机数量、随机时间、随机地址**提币
 - 支持多币种（ETH、USDT、USDC、SUI、G、SOL）和多网络
@@ -20,18 +45,19 @@
     <img src="https://github.com/user-attachments/assets/18e32401-a4bf-4271-a24a-e11475766860" alt="image" width="300"/>
     <img src="https://github.com/user-attachments/assets/bbc026aa-7d25-4220-ae5d-92f73a07f6ad" alt="image" width="300"/>
 
-## ~ 如果您觉得这个工具对您有帮助，可以请我喝杯蜜雪冰城，增加更多功能和分享更多小工具 ~
-![image](https://github.com/user-attachments/assets/b7810000-78d3-4c6b-a10d-cee4d22d6845)
-![image](https://github.com/user-attachments/assets/11952997-dd5d-4311-a085-8145acdb4950)
-## 联系方式
-https://x.com/StayrealLoL
-## 系统要求
+## 💖 支持项目
+如果您觉得这个工具对您有帮助，可以请我喝杯蜜雪冰城，增加更多功能和分享更多小工具：
+<br />
+<img src="https://github.com/user-attachments/assets/b7810000-78d3-4c6b-a10d-cee4d22d6845" alt="Donation QR Code 1" width="200"/>
+<img src="https://github.com/user-attachments/assets/11952997-dd5d-4311-a085-8145acdb4950" alt="Donation QR Code 2" width="200"/>
+
+## ❇️ 环境要求
 
 - Windows 10/11
 - Python 3.12.5 (用于构建可执行文件，建议使用此版本以获得最佳兼容性)
 - 交易所API密钥（需开启提币权限）
 
-## 使用方式 (通过源代码构建并运行)
+## ❇️ 运行教程
 
 为了确保代码的透明性和安全性，推荐您通过以下步骤自行构建并运行本工具：
 
@@ -69,7 +95,7 @@ https://x.com/StayrealLoL
     *   进入上述 `dist_packages/MultiWithdrawalHelper_vX.X.X/` 文件夹。
     *   双击运行 `MultiWithdrawalHelper.exe` 文件。
 
-## 使用说明
+## ❇️ 使用说明
 
 1. 配置API密钥：
    - 点击"设置"按钮，输入API Key和Secret Key
@@ -92,10 +118,9 @@ https://x.com/StayrealLoL
    - 支持多交易所历史记录查询
 
 5. 其他：
-   
    - 支持大额提币二次确认，安全性高
 
-## 注意事项
+## ❇️ 注意事项
 
 - 请确保API密钥安全，不要泄露给他人
 - 建议先使用小额测试提币功能
@@ -104,9 +129,9 @@ https://x.com/StayrealLoL
 - 请确保网络稳定，**提币时的ip需与交易所设置的ip白名单（建议设置）一致**，避免提币失败
 - OKX部分币种（如SOL、SUI）需使用"地址:标签"格式，请提前配置
 
-## 更新日志
+## ❇️ 更新日志
 
-### v1.1.0 
+### v1.1.0
 - 支持多交易所（Binance、OKX）
 - 自动识别地址类型，移除手动选择
 - 进度条与标签N/N显示
@@ -119,17 +144,7 @@ https://x.com/StayrealLoL
 - 支持地址验证
 - 支持历史记录
 
-## 免责声明
-
-1. 本工具仅供学习和研究使用，不构成任何投资建议。
-2. 使用本工具进行提币操作时，请确保遵守各交易所平台的相关规则和政策。
-3. 由于网络延迟、API限制等原因，提币操作可能失败，本工具不保证100%成功率。
-4. 使用本工具造成的任何损失（包括但不限于资金损失、账户限制等），开发者不承担任何责任。
-5. 请勿将本工具用于任何非法用途，包括但不限于洗钱、逃税等违法行为。
-6. 使用本工具即表示您同意承担所有相关风险和责任。
-
-## 许可证
+## 📜 许可证
 
 MIT License
-
 
