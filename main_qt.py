@@ -20,8 +20,8 @@ from PyQt6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout, QH
                            QTextEdit, QFrame, QScrollArea, QGridLayout, QMessageBox,
                            QGroupBox, QTabWidget, QSplitter, QToolBar, QStatusBar,
                            QFileDialog, QSizePolicy, QDialog, QCheckBox, QDialogButtonBox, QTextBrowser)
-from PyQt6.QtCore import Qt, QTimer, pyqtSignal, QSize, QSettings, QLocale
-from PyQt6.QtGui import QAction, QFont, QIcon, QColor, QPalette, QIntValidator, QDoubleValidator, QCloseEvent, QClipboard
+from PyQt6.QtCore import Qt, QTimer, pyqtSignal, QSize, QSettings, QLocale, QObject, QThread, QThreadPool, QUrl # <-- QUrl is needed
+from PyQt6.QtGui import QAction, QFont, QIcon, QColor, QPalette, QIntValidator, QDoubleValidator, QCloseEvent, QClipboard, QDesktopServices # <-- Add QDesktopServices
 
 # API相关类导入
 from exchange_api_base import BaseExchangeAPI
@@ -148,6 +148,57 @@ class DonationDialog(QDialog):
         clipboard = QApplication.clipboard()
         clipboard.setText(text)
         QMessageBox.information(self, "复制成功", "地址已复制到剪贴板！")
+
+# API初始化工作线程类
+class ApiInitWorker(QObject):
+    finished = pyqtSignal(bool, str, object, str)  # 成功标志, 消息, API实例, 交易所名称
+    log_message = pyqtSignal(str, str)     # 消息, 级别
+    
+    def __init__(self, exchange_name, api_class, config, logger):
+        super().__init__()
+        self.exchange_name = exchange_name
+        self.api_class = api_class
+        self.config = config
+        self.logger = logger
+        self.api_instance = None
+        
+    def run(self):
+        try:
+            self.log_message.emit(f"正在为交易所 {self.exchange_name} 初始化API...", "INFO")
+            self.api_instance = self.api_class(config=self.config, logger=self.logger)
+            self.logger.info(f"已创建 {self.exchange_name} API 实例。正在尝试连接...")
+            connected, message = self.api_instance.connect()
+            
+            # 返回API对象和结果
+            self.finished.emit(connected, message, self.api_instance, self.exchange_name)
+            
+        except Exception as e:
+            error_msg = f"初始化或连接 {self.exchange_name} API时发生严重错误: {e}"
+            self.log_message.emit(error_msg, "CRITICAL")
+            self.finished.emit(False, str(e), None, self.exchange_name)
+
+# 余额查询工作线程类
+class BalanceWorker(QObject):
+    finished = pyqtSignal(str, str)  # 余额字符串, 币种
+    error = pyqtSignal(str, str)     # 错误信息, 币种
+    log_message = pyqtSignal(str, str) # 消息, 级别
+    
+    def __init__(self, api, coin):
+        super().__init__()
+        self.api = api
+        self.coin = coin
+        
+    def run(self):
+        try:
+            self.log_message.emit(f"为币种 {self.coin} 请求余额...", "DEBUG")
+            balance_val_str = self.api.get_balance(asset=self.coin)
+            
+            if balance_val_str is not None:
+                self.finished.emit(balance_val_str, self.coin)
+            else:
+                self.error.emit("无法获取余额", self.coin)
+        except Exception as e:
+            self.error.emit(str(e), self.coin)
 
 # =============================================================================
 # 深色主题样式定义
@@ -357,7 +408,17 @@ class WithdrawalHelper(QMainWindow):
         self.price_cache = {}
         self.price_cache_ttl = 300
         
+        # 添加余额缓存
+        self.balance_cache = {}  # 格式: {exchange_coin: (balance_str, timestamp)}
+        self.balance_cache_ttl = 30  # 缓存有效期30秒
+        
         self.running = False
+        
+        # 创建线程引用存储列表，避免线程被垃圾回收导致"QThread: Destroyed while thread is still running"错误
+        self.thread_references = []
+        
+        # 设置Qt线程池的最大线程数，避免创建过多线程
+        QThreadPool.globalInstance().setMaxThreadCount(10)
 
         self.address_validator = AddressValidator(self.logger)
         self.settings_dialog = SettingsDialog(self.logger, self.config_path, self)
@@ -467,6 +528,20 @@ class WithdrawalHelper(QMainWindow):
         donation_btn.setStyleSheet("color: #3498DB;")
         donation_btn.clicked.connect(self.show_donation_dialog)
         toolbar_layout.addWidget(donation_btn)
+        
+        # 添加Twitter链接
+        twitter_label = QLabel()
+        twitter_url = "https://x.com/StayrealLoL"
+        icon_path = "twitter.png" # Relative path to the icon
+        # 使用Twitter蓝色，移除下划线，添加图标
+        twitter_label.setText(f'''<a href="{twitter_url}" style="color: #1DA1F2; text-decoration: none;">
+                               <img src="{icon_path}" width="14" height="14" style="vertical-align: middle;"> 
+                               关注作者Twitter</a>''') 
+        twitter_label.setTextFormat(Qt.TextFormat.RichText)
+        twitter_label.setToolTip(f"访问开发者Twitter: {twitter_url}")
+        twitter_label.setOpenExternalLinks(True) # 让QLabel自动处理打开链接
+        # 将链接放在伸展项之前，使其靠右
+        toolbar_layout.addWidget(twitter_label)
         
         toolbar_layout.addStretch(1)
         main_layout.addWidget(toolbar_widget)
@@ -839,50 +914,6 @@ class WithdrawalHelper(QMainWindow):
         self.log_message(f"已加载 {len(addresses_data)} 条 {self.current_address_type} 类型的地址。", level="INFO")
         self.refresh_address_list()
     
-    def _setup_address_type_selector(self):
-        """设置地址类型选择器UI."""
-        if not hasattr(self, 'available_address_types') or not self.available_address_types:
-            return
-        
-        # 如果选择器已存在，先移除
-        if hasattr(self, 'address_type_selector'):
-            try:
-                if self.address_type_selector.parent():
-                    self.address_type_selector.parent().layout().removeWidget(self.address_type_selector)
-                self.address_type_selector.deleteLater()
-            except:
-                pass
-        
-        # 创建一个水平布局，放置标签和选择器
-        selector_container = QWidget()
-        selector_layout = QHBoxLayout(selector_container)
-        selector_layout.setContentsMargins(5, 0, 5, 0)
-        selector_layout.setSpacing(5)
-        
-        # 添加标签
-        selector_layout.addWidget(QLabel("地址类型:"))
-        
-        # 创建选择器
-        self.address_type_selector = QComboBox()
-        self.address_type_selector.addItems(self.available_address_types)
-        self.address_type_selector.setCurrentText(self.current_address_type)
-        self.address_type_selector.currentTextChanged.connect(self._on_address_type_changed)
-        selector_layout.addWidget(self.address_type_selector)
-        
-        # 为了自适应宽度，添加一个弹性空间
-        selector_layout.addStretch(1)
-        
-        # 找到地址文本框所在的父容器
-        address_group = None
-        for child in self.findChildren(QGroupBox):
-            if child.title() == "提币地址列表":
-                address_group = child
-                break
-        
-        if address_group and address_group.layout():
-            # 在地址列表上方添加选择器
-            address_group.layout().insertWidget(0, selector_container)
-    
     def _on_address_type_changed(self, address_type):
         """当用户切换地址类型时调用."""
         if address_type == self.current_address_type:
@@ -1028,7 +1059,13 @@ class WithdrawalHelper(QMainWindow):
             log_entry = self._mask_addresses_in_text(log_entry)
         colored_entry = f'<span style="color:{color};">{log_entry}</span>'
         if hasattr(self, 'update_signal'):
-            self.update_signal.emit("log", colored_entry)
+            # Only update UI if the level is not DEBUG
+            if level.strip().upper() != "DEBUG": # Use strip().upper() for robust check
+                try:
+                    # Corrected: Emit 'log' action and the HTML formatted colored_entry
+                    self.update_signal.emit("log", colored_entry)
+                except RuntimeError as e:
+                    self.logger.error(f"Failed to update UI with log message: {e}", exc_info=True)
         
     def _mask_addresses_in_text(self, text):
         address_patterns = [
@@ -1205,15 +1242,48 @@ class WithdrawalHelper(QMainWindow):
     def _initialize_api_for_exchange(self, exchange_name: str):
         """初始化或切换到指定交易所的API实例."""
         self.log_message(f"正在为交易所 {exchange_name} 初始化API...", level="INFO")        
-        if hasattr(self, 'status_label'): self.status_label.setText(f"{exchange_name} - 正在连接...")
+        if hasattr(self, 'status_label'): 
+            self.status_label.setText(f"{exchange_name} - 正在连接...")
         self.update_api_status_indicator(False) 
         self._clear_exchange_specific_ui_elements() 
+        
+        # --- 开始改进的线程清理 ---
+        # 在访问前检查线程对象是否存在且有效
+        thread_to_clean = getattr(self, 'api_thread', None)
+        if thread_to_clean is not None:
+            try:
+                if thread_to_clean.isRunning():
+                    self.log_message("正在停止之前的API初始化线程...", level="DEBUG")
+                    thread_to_clean.quit()
+                    if not thread_to_clean.wait(5000):  # 增加等待时间到5秒
+                        self.log_message("之前的API线程未能正常退出，可能导致问题。", level="WARNING")
+                    else:
+                        self.log_message("之前的API线程已停止。", level="DEBUG")
+                else:
+                     self.log_message("之前的API线程已结束或未运行。", level="DEBUG")
+                
+                # 请求删除旧线程和worker
+                worker_to_delete = getattr(self, 'api_worker', None)
+                if worker_to_delete:
+                     worker_to_delete.deleteLater()
+                thread_to_clean.deleteLater()
+                 
+            except RuntimeError: # 捕获对象已被删除的错误
+                self.log_message("尝试清理API线程时出错：对象可能已被删除。", level="DEBUG")
+            except Exception as e_clean: # 捕获其他潜在错误
+                 self.log_message(f"清理API线程时发生未知错误: {e_clean}", level="ERROR")
+                 
+        self.api_thread = None # 显式设置None
+        self.api_worker = None
+        # --- 结束改进的线程清理 ---
+            
         if self.current_exchange_api and hasattr(self.current_exchange_api, 'close'):
             try:
                 self.current_exchange_api.close()
                 self.log_message(f"已关闭之前的API实例 ({self.current_exchange_api.__class__.__name__}).", level="DEBUG")
             except Exception as e:
                 self.log_message(f"关闭旧API实例时出错: {e}", level="ERROR", exc_info=True)
+                
         self.current_exchange_api = None 
         self.current_exchange_name = exchange_name 
         api_class = self.EXCHANGES.get(exchange_name)
@@ -1221,29 +1291,49 @@ class WithdrawalHelper(QMainWindow):
             self.log_message(f"错误: 未找到交易所 {exchange_name} 的API类定义。", level="CRITICAL")
             if hasattr(self, 'status_label'): self.status_label.setText(f"{exchange_name} - API类未找到")
             return
-        try:
-            self.config.read(self.config_path, encoding='utf-8')
-            self.current_exchange_api = api_class(config=self.config, logger=self.logger)
-            self.logger.info(f"已创建 {exchange_name} API 实例。正在尝试连接...")
-            connected, message = self.current_exchange_api.connect()
-            if connected:
-                self.log_message(f"成功连接到 {exchange_name}: {message}", level="SUCCESS")
-                self.update_api_status_indicator(True)
-                if hasattr(self, 'status_label'): self.status_label.setText(f"{exchange_name} - 已连接")
-                self._perform_full_ui_refresh() 
-            else:
-                self.log_message(f"连接到 {exchange_name} 失败: {message}", level="ERROR")
-                self.update_api_status_indicator(False)
-                if hasattr(self, 'status_label'): self.status_label.setText(f"{exchange_name} - 连接失败: {message[:100]}")
-                self.current_exchange_api = None 
-        except Exception as e:
-            self.log_message(f"初始化或连接 {exchange_name} API时发生严重错误: {e}", level="CRITICAL", exc_info=True)
+            
+        # 读取最新配置
+        self.config.read(self.config_path, encoding='utf-8')
+        
+        # 创建新的线程和工作器
+        self.api_thread = QThread()
+        # 将线程添加到引用存储列表 (可能不再需要，但暂时保留)
+        if hasattr(self, 'thread_references'): self.thread_references.append(self.api_thread)
+        
+        self.api_worker = ApiInitWorker(exchange_name, api_class, self.config, self.logger)
+        self.api_worker.moveToThread(self.api_thread)
+        
+        # 连接信号
+        self.api_thread.started.connect(self.api_worker.run)
+        self.api_worker.finished.connect(self._handle_api_init_result)
+        self.api_worker.log_message.connect(lambda msg, level: self.log_message(msg, level=level))
+        
+        # --- 改进的清理连接 ---
+        # 当worker完成时，请求线程退出
+        self.api_worker.finished.connect(self.api_thread.quit)
+        # 当线程结束后，请求删除worker和线程自身
+        self.api_thread.finished.connect(self.api_worker.deleteLater)
+        self.api_thread.finished.connect(self.api_thread.deleteLater)
+        # --- 结束改进的清理连接 ---
+        
+        # 启动线程
+        self.api_thread.start()
+        
+    def _handle_api_init_result(self, connected, message, api_instance, exchange_name):
+        """处理API初始化结果"""
+        if connected:
+            self.current_exchange_api = api_instance
+            self.log_message(f"成功连接到 {exchange_name}: {message}", level="SUCCESS")
+            self.update_api_status_indicator(True)
+            if hasattr(self, 'status_label'): self.status_label.setText(f"{exchange_name} - 已连接")
+            self._perform_full_ui_refresh() 
+        else:
+            self.log_message(f"连接到 {exchange_name} 失败: {message}", level="ERROR")
             self.update_api_status_indicator(False)
-            if hasattr(self, 'status_label'): self.status_label.setText(f"{exchange_name} - 初始化错误")
+            if hasattr(self, 'status_label'): 
+                self.status_label.setText(f"{exchange_name} - 连接失败: {message[:100]}")
             self.current_exchange_api = None
-            # Indent this line
-            self.update_api_status_indicator(False)
-    
+
     def _clear_exchange_specific_ui_elements(self):
         """清除UI上依赖于特定交易所API数据的内容 (币种, 网络, 余额等)."""
         self.logger.debug("正在清除交易所特定的UI元素...")
@@ -1337,6 +1427,47 @@ class WithdrawalHelper(QMainWindow):
     def config_updated_and_reconnect(self, resetting=False):
         """当设置对话框保存后调用此方法, 重新加载配置并重新初始化/连接API."""
         self.log_message("配置已更新或重置，正在重新应用...", level="INFO")
+        
+        # --- 开始改进的线程清理 ---
+        # 清理API线程
+        thread_to_clean_api = getattr(self, 'api_thread', None)
+        if thread_to_clean_api is not None:
+            try:
+                if thread_to_clean_api.isRunning():
+                    self.log_message("等待API初始化线程完成(配置更新)...", level="DEBUG")
+                    thread_to_clean_api.quit()
+                    if not thread_to_clean_api.wait(5000): 
+                        self.log_message("API线程(配置更新)未能正常退出。", level="WARNING")
+                worker_to_delete_api = getattr(self, 'api_worker', None)
+                if worker_to_delete_api: worker_to_delete_api.deleteLater() 
+                thread_to_clean_api.deleteLater()
+            except RuntimeError:
+                self.log_message("清理API线程(配置更新)时出错：对象可能已被删除。", level="DEBUG")
+            except Exception as e_clean_api:
+                 self.log_message(f"清理API线程(配置更新)时发生未知错误: {e_clean_api}", level="ERROR")
+        self.api_thread = None
+        self.api_worker = None
+            
+        # 清理余额线程
+        thread_to_clean_bal = getattr(self, 'balance_thread', None)
+        if thread_to_clean_bal is not None:
+            try:
+                if thread_to_clean_bal.isRunning():
+                    self.log_message("等待余额查询线程完成(配置更新)...", level="DEBUG")
+                    thread_to_clean_bal.quit()
+                    if not thread_to_clean_bal.wait(3000): 
+                        self.log_message("余额线程(配置更新)未能正常退出。", level="WARNING")
+                worker_to_delete_bal = getattr(self, 'balance_worker', None)
+                if worker_to_delete_bal: worker_to_delete_bal.deleteLater()
+                thread_to_clean_bal.deleteLater()
+            except RuntimeError:
+                self.log_message("清理余额线程(配置更新)时出错：对象可能已被删除。", level="DEBUG")
+            except Exception as e_clean_bal:
+                 self.log_message(f"清理余额线程(配置更新)时发生未知错误: {e_clean_bal}", level="ERROR")
+        self.balance_thread = None
+        self.balance_worker = None
+        # --- 结束改进的线程清理 ---
+        
         self.config = ConfigParser()
         if os.path.exists(self.config_path):
             self.config.read(self.config_path, encoding='utf-8')
@@ -1345,6 +1476,7 @@ class WithdrawalHelper(QMainWindow):
             self.log_message("配置文件丢失，无法在配置更新后重新加载。尝试创建默认配置。", level="ERROR", exc_info=True)
             self._create_default_config() 
             self.config.read(self.config_path, encoding='utf-8')
+            
         current_selected_exchange_in_toolbar = self.current_exchange_name 
         if hasattr(self, 'exchange_combo_toolbar'):
              current_name_from_ui = self.exchange_combo_toolbar.currentText()
@@ -1364,344 +1496,6 @@ class WithdrawalHelper(QMainWindow):
             if not (self.current_exchange_api and hasattr(self.current_exchange_api, 'client') and self.current_exchange_api.client is not None):
                  self._clear_exchange_specific_ui_elements()
                  self.update_api_status_indicator(False)
-
-    def closeEvent(self, event: QCloseEvent): # Added type hint for event
-        self.logger.info("应用程序正在关闭...")
-        if self.current_exchange_api and hasattr(self.current_exchange_api, 'close'):
-            try:
-                self.current_exchange_api.close()
-                self.log_message(f"已关闭 {self.current_exchange_name} API 连接。", level="INFO")
-            except Exception as e:
-                self.log_message(f"关闭 {self.current_exchange_name} API 时出错: {e}", level="ERROR", exc_info=True)
-        
-        try:
-            # Use QSettings for GUI state as it's platform-aware and standard
-            # Using a specific file name within app_data_dir for clarity
-            gui_settings_file = os.path.join(self.app_data_dir, "GuiState.ini")
-            q_settings = QSettings(gui_settings_file, QSettings.Format.IniFormat)
-            q_settings.setValue("geometry", self.saveGeometry())
-            q_settings.setValue("windowState", self.saveState())
-            # q_settings.sync() # sync() is usually not needed as QSettings auto-saves, but can be explicit.
-            self.logger.info(f"窗口几何状态已保存到: {gui_settings_file}")
-        except Exception as e:
-            self.logger.error(f"保存窗口几何状态失败: {e}", exc_info=True)
-
-        self.save_app_config() # Save other app config like last exchange, last file path etc.
-        
-        if hasattr(self, 'status_bar_timer') and self.status_bar_timer.isActive():
-            self.status_bar_timer.stop()
-            self.logger.debug("状态栏定时器已停止。")
-        
-        super().closeEvent(event)
-
-    def save_app_config(self):
-        """将应用的非敏感配置（如下次使用的交易所、地址文件路径）保存到 config.ini"""
-        try:
-            if not self.config.has_section('GENERAL'):
-                self.config.add_section('GENERAL')
-            
-            # 保存最后选择的交易所 (Toolbar combo's current text is reliable)
-            if hasattr(self, 'exchange_combo_toolbar'):
-                 current_exchange = self.exchange_combo_toolbar.currentText()
-                 if current_exchange in self.EXCHANGES:
-                     self.config.set('GENERAL', 'last_selected_exchange', current_exchange)
-            
-            # 保存最后使用的地址文件路径
-            self.config.set('GENERAL', 'last_address_file', getattr(self, 'last_address_file_path', '')) # Use getattr for safety
-
-            # 保存OKX模拟盘设置 (Ensure this is also saved, might need update from settings dialog state)
-            # This assumes self.config object holds the latest state from settings dialog or initialization
-            okx_simulated_value = self.config.get('GENERAL', 'okx_simulated', fallback='False') 
-            self.config.set('GENERAL', 'okx_simulated', okx_simulated_value) 
-
-            with open(self.config_path, 'w', encoding='utf-8') as configfile:
-                self.config.write(configfile)
-            self.logger.info("应用常规配置已保存到 config.ini")
-        except Exception as e:
-            self.logger.error(f"保存应用配置到 config.ini 时出错: {e}", exc_info=True)
-            # Optionally show a message to the user, but might be too noisy on close
-
-    # ... (Other methods will be reviewed/updated in subsequent steps)
-    # Methods like on_coin_selected, update_balance_label, update_network_fee, update_usd_values etc.
-    # will be primary targets for the next step to complete the UI refresh logic.
-
-    # Placeholder for _post_initial_ui_setup - review its content based on new init flow
-    def _post_initial_ui_setup(self):
-        """UI初始化完成后的后续操作 (e.g. final enabling/disabling based on API status)."""
-        self.logger.debug("执行 _post_initial_ui_setup...")
-        
-        # 检查主操作API (current_exchange_api) 是否已成功初始化并连接
-        # 不再依赖特定的 'client' 属性，只检查API实例是否存在
-        if not self.current_exchange_api:
-            self.log_message("主操作API未成功连接或初始化，部分UI功能将保持禁用。", level="INFO")
-            # 确保主要交互元素在API未就绪时被禁用
-            if hasattr(self, 'coin_combo'): self.coin_combo.setEnabled(False)
-            if hasattr(self, 'network_combo'): self.network_combo.setEnabled(False)
-            if hasattr(self, 'start_button'): self.start_button.setEnabled(False)
-        else:
-            # 如果主操作API已连接，则启用相关按钮
-            self.log_message("主操作API已连接，启用相关UI功能。", level="DEBUG")
-            # 注意：coin_combo 和 network_combo 的启用状态由 _perform_full_ui_refresh 控制
-            if hasattr(self, 'start_button'): self.start_button.setEnabled(True)
-
-        self.show_startup_tips()
-
-    def show_startup_tips(self): # Placeholder implementation
-        self.logger.debug("show_startup_tips called (placeholder).")
-        # Example: self.log_message("欢迎使用多交易所提币助手!", level="INFO")
-
-
-    # old load_app_config_and_init_api is now _load_config_and_initialize_api
-    # old initialize_selected_exchange_api is now _initialize_api_for_exchange (called by other methods)
-    # old handle_exchange_change is now _handle_exchange_change_from_toolbar
-
-    # Need to review all methods that interact with exchange API to use self.current_exchange_api
-    # Example: def check_balance(self): ... self.current_exchange_api.get_balance(...) ...
-    # These will be part of the next step.
-
-    # Ensure _open_settings_dialog correctly calls self.settings_dialog.exec()
-    def _open_settings_dialog(self):
-        self.logger.debug("打开设置对话框...")
-        if self.settings_dialog.exec(): 
-            self.log_message("设置已更新。正在重新连接...", level="INFO")
-            self.config_updated_and_reconnect(resetting=False) 
-        else:
-            self.log_message("设置对话框已取消。", level="DEBUG")
-
-
-    # Dummy _update_status_bar_time for now
-    def _update_status_bar_time(self):
-        if hasattr(self, 'statusBar') and hasattr(self.statusBar(), 'showMessage'):
-            current_time = time.strftime("%Y-%m-%d %H:%M:%S")
-            # self.statusBar().showMessage(current_time) # This overrides other status messages
-            # It's better to have a dedicated label in status bar for time if needed permanently
-            pass # For now, do nothing to prevent overriding important status messages.
-
-    def update_networks_on_coin_change(self, coin_text: str):
-        """当币种下拉框选择变化时调用此方法 (原名). 
-           新职责: 更新网络、余额、价格.
-        """
-        self.logger.debug(f"币种选择已更改为: {coin_text}")
-        if not self.current_exchange_api or not coin_text:
-            self.log_message("API未就绪或未选择币种，无法更新网络/余额/价格。", level="DEBUG")
-            self._clear_networks_balance_fee_price_ui() # Clear dependent fields
-            return
-
-        # 自动切换地址类型
-        if hasattr(self, 'available_address_types'):
-            # 根据币种确定对应的地址类型
-            address_type_map = {
-                'SUI': 'sui',
-                'SOL': 'sol',
-                'ETH': 'evm',
-                'USDT': 'evm',
-                'USDC': 'evm',
-                'G': 'evm'
-            }
-            
-            target_type = address_type_map.get(coin_text.upper())
-            if target_type and target_type in self.available_address_types:
-                # 如果目标类型在可用类型列表中，则切换
-                self.log_message(f"自动切换地址类型为: {target_type}", level="INFO")
-                self.current_address_type = target_type
-                # 重新加载当前类型的地址
-                self._load_addresses_for_current_type()
-
-        # 1. Update Networks for the selected coin
-        self._update_networks_display(coin_text)
-        # 2. Update Balance for the selected coin
-        self._update_balance_display(coin_text)
-        # 3. Update Price for the selected coin (vs USDT or a default quote)
-        # 4. Fee update is usually triggered by network selection, 
-        #    but if a network is auto-selected, its handler should update the fee.
-        #    If networks were populated and one is selected by default by _update_networks_display,
-        #    then update_usd_values_on_network_change (on_network_selected) should be triggered.
-
-        # Original call to update_usd_values - this might be a good place for it if it involves coin price
-        self.update_usd_values(force_update=True) # force_update might relate to price fetching
-
-    def _update_networks_display(self, coin_text: str):
-        if not hasattr(self, 'network_combo') or not self.current_exchange_api:
-            return
-        self.network_combo.blockSignals(True)
-        self.network_combo.clear()
-        self.network_combo.setEnabled(False)
-        try:
-            self.log_message(f"为币种 {coin_text} 请求网络列表...", level="DEBUG")
-            networks = self.current_exchange_api.get_networks_for_coin(coin=coin_text)
-            if networks:
-                self.network_combo.addItems(networks)
-                self.network_combo.setEnabled(True)
-                self.log_message(f"为币种 {coin_text} 填充了 {len(networks)} 个网络。", level="INFO")
-                if self.network_combo.count() > 0:
-                    self.network_combo.setCurrentIndex(0) 
-                    self.network_combo.blockSignals(False)
-                    self.update_usd_values_on_network_change(self.network_combo.currentText())
-                return
-            else:
-                self.log_message(f"{self.current_exchange_name} 未返回币种 {coin_text} 的网络信息。", level="WARNING")
-        except Exception as e:
-            self.log_message(f"获取 {coin_text} 的网络列表时出错: {e}", level="ERROR", exc_info=True)
-        self.network_combo.blockSignals(False)
-        if hasattr(self, 'fee_label'): self.fee_label.setText("手续费: N/A")
-
-    def _update_balance_display(self, coin_text: str):
-        if not hasattr(self, 'balance_label') or not self.current_exchange_api:
-            return
-        self.balance_label.setText("余额: 正在加载...")
-        try:
-            self.logger.debug(f"为币种 {coin_text} 请求余额...")
-            balance_val_str = self.current_exchange_api.get_balance(asset=coin_text)
-            
-            if balance_val_str is not None: 
-                self.logger.debug(f"获取到 {coin_text} 原始余额字符串: '{balance_val_str}'")
-                try:
-                    # 尝试转换为 Decimal
-                    balance_decimal = Decimal(balance_val_str)
-                    self.logger.debug(f"转换为 Decimal: {balance_decimal}")
-                    # 使用 QLocale 格式化为字符串，保留较多小数位
-                    formatted_balance = QLocale().toString(float(balance_decimal), 'f', 8) 
-                    self.balance_label.setText(f"余额: {formatted_balance} {coin_text}")
-                    self.logger.info(f"更新余额: {formatted_balance} {coin_text} ({self.current_exchange_name})")
-                except Exception as conversion_error:
-                    # 如果转换或格式化失败，显示原始字符串并记录错误
-                    self.logger.error(f"转换或格式化余额 '{balance_val_str}' for {coin_text} 失败: {conversion_error}", exc_info=True)
-                    self.balance_label.setText(f"余额: {balance_val_str} {coin_text} (格式错误)")
-            else:
-                self.balance_label.setText("余额: N/A") 
-                self.logger.warning(f"无法获取 {coin_text} 的余额 ({self.current_exchange_name})。API返回None。")
-        except Exception as e:
-            self.logger.error(f"更新 {coin_text} ({self.current_exchange_name}) 余额时出错: {e}", exc_info=True)
-            self.balance_label.setText("余额: 获取失败")
-
-    def _update_fee_display(self, coin: str, network: str):
-        """根据当前选择的币种和网络，获取并更新提现手续费的UI显示。"""
-        if not hasattr(self, 'fee_label') or not self.current_exchange_api:
-            self.logger.debug("_update_fee_display: fee_label 未找到或API未连接，跳过手续费更新。")
-            return
-                
-        self.fee_label.setText("手续费: 正在加载...")
-        try:
-            self.logger.debug(f"为币种 {coin} ({network}) 请求手续费...")
-            # 注意：get_withdrawal_fee 可能返回字符串 "fee asset" 或字典，或None
-            fee_data = self.current_exchange_api.get_withdrawal_fee(coin=coin, network=network)
-            
-            if fee_data is not None:
-                if isinstance(fee_data, str): # 例如直接返回 "0.001 BTC"
-                    # 如果API返回的是 "fee asset" 格式，并且我们希望只显示 "fee asset"
-                    # 或者，如果API只返回费率数字字符串，我们需要加上币种
-                    # 假设BaseExchangeAPI的实现会返回一个可以直接显示的字符串或一个包含fee和asset的字典
-                    self.fee_label.setText(f"手续费: {fee_data}") 
-                    self.logger.info(f"更新手续费 for {coin} on {network}: {fee_data}")
-                elif isinstance(fee_data, dict):
-                    fee_amount = fee_data.get('fee')
-                    fee_asset = fee_data.get('asset', coin) # 如果字典没提供asset，默认用当前币种
-                    if fee_amount is not None:
-                        self.fee_label.setText(f"手续费: {fee_amount} {fee_asset}")
-                        self.logger.info(f"更新手续费 for {coin} on {network}: {fee_amount} {fee_asset}")
-                    else: # else for 'if fee_amount is not None:'
-                        self.fee_label.setText("手续费: N/A (数据格式错误)")
-                        self.logger.warning(f"获取 {coin} ({network}) 手续费成功，但数据格式不包含 'fee'。 数据: {fee_data}")
-                else: # else for 'if isinstance(str) / elif isinstance(dict)'
-                    # 如果返回了非预期的类型
-                    self.fee_label.setText(f"手续费: {str(fee_data)}") 
-                    self.logger.warning(f"获取 {coin} ({network}) 手续费返回了未知类型: {type(fee_data)}, 内容: {fee_data}")
-            else: # else for 'if fee_data is not None:'
-                self.fee_label.setText("手续费: N/A")
-                self.logger.warning(f"无法获取 {coin} ({network}) 的手续费。API返回None。")
-        except Exception as e:
-            self.logger.error(f"更新 {coin} ({network}) 手续费时出错: {e}", exc_info=True)
-            self.fee_label.setText("手续费: 获取失败")
-
-    def update_usd_values_on_network_change(self, network_text: str):
-        """当网络下拉框选择变化时调用此方法 (原名).\n           新职责: 更新手续费.\n        """        
-        self.logger.debug(f"网络选择已更改为: {network_text}")
-        if not self.current_exchange_api or not hasattr(self, 'coin_combo') or not self.coin_combo.currentText() or not network_text:
-            self.log_message("API未就绪、未选择币种或网络，无法更新手续费。", level="DEBUG")
-            if hasattr(self, 'fee_label'): self.fee_label.setText("手续费: N/A")
-            return # Corrected indent to 12 spaces
-        selected_coin = self.coin_combo.currentText()
-        self._update_fee_display(selected_coin, network_text)
-
-    def update_usd_values(self, force_update=False):
-        """更新界面上与USD估值相关的标签。价格数据固定从Binance获取."""
-        if not hasattr(self, 'coin_combo') or not self.coin_combo.currentText():
-            if hasattr(self, 'min_amount_usd'): self.min_amount_usd.setText("≈$-.--")
-            if hasattr(self, 'max_amount_usd'): self.max_amount_usd.setText("≈$-.--")
-            return
-                
-        coin = self.coin_combo.currentText()
-        quote_currency = "USDT" 
-        price = None
-
-        if coin.upper() == quote_currency.upper():
-            price = Decimal(1.0)
-            self.logger.debug(f"USD估值: {coin} (稳定币) 价格设为 1.0")
-        else:
-            # 构造Binance交易对格式, e.g., ETHUSDT
-            binance_symbol_to_fetch = f"{coin.upper()}{quote_currency.upper()}"
-            self.logger.debug(f"USD估值: 使用Binance API获取 {binance_symbol_to_fetch} 的价格。")
-            
-            price_str = None
-            # 检查缓存
-            if not force_update and binance_symbol_to_fetch in self.price_cache:
-                price_str = self.price_cache.get(binance_symbol_to_fetch)
-                if price_str: # Ensure cached value is not None or empty before logging
-                    self.logger.debug(f"USD估值: 使用缓存价格 {price_str} for {binance_symbol_to_fetch}")
-            
-            # 如果缓存未命中或强制更新, 则从API获取
-            if not price_str:
-                if self.price_provider_api and self.binance_api_for_prices_connected:
-                    try:
-                        self.logger.debug(f"USD估值: 正在为 {binance_symbol_to_fetch} 通过Binance API请求价格...")
-                        price_str = self.price_provider_api.get_symbol_ticker(symbol=binance_symbol_to_fetch)
-                        
-                        if price_str: # API返回了价格字符串
-                            self.price_cache[binance_symbol_to_fetch] = price_str 
-                            self.logger.info(f"USD估值: 通过Binance API获取到价格 {price_str} 并缓存 for {binance_symbol_to_fetch}")
-                        else: # API调用成功但未返回价格 (e.g.,交易对不存在)
-                            self.logger.warning(f"USD估值: Binance API未能返回 {binance_symbol_to_fetch} 的价格。")
-                            # 可选: 清除可能存在的旧缓存，以防显示错误价格
-                            if binance_symbol_to_fetch in self.price_cache: 
-                                del self.price_cache[binance_symbol_to_fetch]
-                    except Exception as e_price_fetch:
-                        self.logger.error(f"USD估值: 通过Binance API获取 {binance_symbol_to_fetch} 价格时出错: {e_price_fetch}", exc_info=True)
-                        price_str = None # 确保出错时price_str为None
-                else:
-                    self.logger.warning("USD估值: Binance价格数据源未连接或未初始化。无法获取实时价格。")
-                    # price_str 保持 None
-
-            # 转换价格字符串为Decimal
-            if price_str:
-                try:
-                    price = Decimal(price_str)
-                except Exception as e_decimal_conversion:
-                    self.logger.error(f"USD估值: 无法将价格字符串 '{price_str}' (来自 {binance_symbol_to_fetch}) 转换为Decimal: {e_decimal_conversion}")
-                    price = None 
-            
-        # 更新UI上的USD估值
-        min_amount_usd_label = getattr(self, 'min_amount_usd', None)
-        max_amount_usd_label = getattr(self, 'max_amount_usd', None)
-
-        if price is not None:
-            try:
-                if hasattr(self, 'min_amount_entry') and min_amount_usd_label:
-                    min_val_str = self.min_amount_entry.text().strip() or "0"
-                    min_val = Decimal(min_val_str)
-                    min_amount_usd_label.setText(f"≈${float(min_val * price):.2f}")
-                
-                if hasattr(self, 'max_amount_entry') and max_amount_usd_label:
-                    max_val_str = self.max_amount_entry.text().strip() or "0"
-                    max_val = Decimal(max_val_str)
-                    max_amount_usd_label.setText(f"≈${float(max_val * price):.2f}")
-            except Exception as e_ui_update:
-                self.logger.error(f"USD估值UI更新错误: {e_ui_update}", exc_info=True)
-                if min_amount_usd_label: min_amount_usd_label.setText("≈$?.??")
-                if max_amount_usd_label: max_amount_usd_label.setText("≈$?.??")
-        else:
-            if min_amount_usd_label: min_amount_usd_label.setText("≈$N/A")
-            if max_amount_usd_label: max_amount_usd_label.setText("≈$N/A")
-            self.logger.debug(f"USD估值：因无法获取 {coin}/{quote_currency} (via Binance) 价格，估值显示为 N/A。")
 
     def show_history(self):
         """处理工具栏 "历史记录" 按钮点击事件. \n           获取历史记录并通过富文本格式在可滚动的自定义对话框中显示。
@@ -2058,7 +1852,7 @@ class WithdrawalHelper(QMainWindow):
         
         if memo:
             message_parts.append(f"Memo/Tag: {str(memo)}\n")
-        
+
         if is_large_withdrawal:
             title = "大额提币确认"
             message_parts.append("\n<span style='color:red;'>警告: 这是一笔大额提币操作！</span>\n")
@@ -2372,22 +2166,509 @@ class WithdrawalHelper(QMainWindow):
         self.wait_update_signal.emit(0, "等待: 0秒")
 
     def show_donation_dialog(self):
-        """显示打赏对话框"""
-        dialog = DonationDialog(self)
-        dialog.exec()
+        """显示捐赠对话框，包含支持作者的信息和捐赠地址。"""
+        donation_dialog = DonationDialog(parent=self)
+        donation_dialog.exec()
+        
+    def closeEvent(self, event: QCloseEvent): # Added type hint for event
+        self.logger.info("应用程序正在关闭...")
+        
+        # 在应用关闭前停止所有可能运行的提币操作
+        if hasattr(self, 'running') and self.running:
+            self.running = False
+            self.log_message("应用程序关闭：提币流程已停止", level="INFO")
+        
+        # --- 开始改进的线程清理 ---
+        threads_to_clean = []
+        # 使用 getattr 获取引用，避免 AttributeError
+        api_thread = getattr(self, 'api_thread', None)
+        api_worker = getattr(self, 'api_worker', None)
+        balance_thread = getattr(self, 'balance_thread', None)
+        balance_worker = getattr(self, 'balance_worker', None)
+        
+        if api_thread is not None: threads_to_clean.append(("API", api_thread, api_worker))
+        if balance_thread is not None: threads_to_clean.append(("余额", balance_thread, balance_worker))
+        
+        for name, thread, worker in threads_to_clean:
+            try:
+                if thread.isRunning():
+                    self.log_message(f"正在停止{name}线程...", level="DEBUG")
+                    thread.quit()
+                    if not thread.wait(3000):
+                        self.log_message(f"{name}线程未能正常退出。", level="WARNING")
+                # 请求删除worker和线程
+                if worker: 
+                     worker.deleteLater()
+                thread.deleteLater()
+            except RuntimeError:
+                 self.log_message(f"清理{name}线程时出错：对象可能已被删除。", level="DEBUG")
+            except Exception as e_clean:
+                 self.log_message(f"清理{name}线程时发生未知错误: {e_clean}", level="ERROR")
+
+        # 清理Python原生提币线程 (无法强制停止，只能等待)
+        withdrawal_thread = getattr(self, 'withdrawal_thread', None)
+        if withdrawal_thread and withdrawal_thread.is_alive():
+            self.log_message("等待提币线程自然结束... (已设置停止标志)", level="INFO")
+            # withdrawal_thread.join(5) # 可以选择等待几秒，但不阻塞关闭太久
+        # --- 结束改进的线程清理 ---
+        
+        # 关闭API连接
+        if self.current_exchange_api and hasattr(self.current_exchange_api, 'close'):
+            try:
+                self.current_exchange_api.close()
+                self.log_message(f"已关闭 {self.current_exchange_name} API 连接。", level="INFO")
+            except Exception as e:
+                self.log_message(f"关闭 {self.current_exchange_name} API 时出错: {e}", level="ERROR", exc_info=True)
+        
+        # 保存窗口状态
+        try:
+            gui_settings_file = os.path.join(self.app_data_dir, "GuiState.ini")
+            q_settings = QSettings(gui_settings_file, QSettings.Format.IniFormat)
+            q_settings.setValue("geometry", self.saveGeometry())
+            q_settings.setValue("windowState", self.saveState())
+            self.logger.info(f"窗口几何状态已保存到: {gui_settings_file}")
+        except Exception as e:
+            self.logger.error(f"保存窗口几何状态失败: {e}", exc_info=True)
+
+        # 保存其他配置
+        self.save_app_config() # Save other app config like last exchange, last file path etc.
+        
+        # 停止定时器
+        if hasattr(self, 'status_bar_timer') and self.status_bar_timer.isActive():
+            self.status_bar_timer.stop()
+            self.logger.debug("状态栏定时器已停止。")
+        
+        # 在调用父类closeEvent之前刷新剩余的日志
+        logging.shutdown()
+        
+        # 确保所有Qt事件处理完毕
+        QApplication.processEvents()
+        
+        # 清空线程引用列表 (如果仍在使用)
+        if hasattr(self, 'thread_references'):
+            self.thread_references.clear()
+        
+        # 最后调用父类的closeEvent以关闭窗口
+        super().closeEvent(event)
+
+    def _open_settings_dialog(self):
+        self.logger.debug("打开设置对话框...")
+        if self.settings_dialog.exec(): 
+            self.log_message("设置已更新。正在重新连接...", level="INFO")
+            self.config_updated_and_reconnect(resetting=False) 
+        else:
+            self.log_message("设置对话框已取消。", level="DEBUG")
+            
+    def save_app_config(self):
+        """将应用的非敏感配置（如下次使用的交易所、地址文件路径）保存到 config.ini"""
+        try:
+            if not self.config.has_section('GENERAL'):
+                self.config.add_section('GENERAL')
+            
+            # 保存最后选择的交易所 (Toolbar combo's current text is reliable)
+            if hasattr(self, 'exchange_combo_toolbar'):
+                 current_exchange = self.exchange_combo_toolbar.currentText()
+                 if current_exchange in self.EXCHANGES:
+                     self.config.set('GENERAL', 'last_selected_exchange', current_exchange)
+            
+            # 保存最后使用的地址文件路径
+            self.config.set('GENERAL', 'last_address_file', getattr(self, 'last_address_file_path', '')) # Use getattr for safety
+
+            # 保存OKX模拟盘设置 (Ensure this is also saved, might need update from settings dialog state)
+            # This assumes self.config object holds the latest state from settings dialog or initialization
+            okx_simulated_value = self.config.get('GENERAL', 'okx_simulated', fallback='False') 
+            self.config.set('GENERAL', 'okx_simulated', okx_simulated_value) 
+
+            with open(self.config_path, 'w', encoding='utf-8') as configfile:
+                self.config.write(configfile)
+            self.logger.info("应用常规配置已保存到 config.ini")
+        except Exception as e:
+            self.logger.error(f"保存应用配置到 config.ini 时出错: {e}", exc_info=True)
+            # Optionally show a message to the user, but might be too noisy on close
+
+    def update_networks_on_coin_change(self, coin_text: str):
+        """当币种下拉框选择变化时调用此方法。
+           更新网络、余额、价格。
+        """
+        self.logger.debug(f"币种选择已更改为: {coin_text}")
+        if not self.current_exchange_api or not coin_text:
+            self.log_message("API未就绪或未选择币种，无法更新网络/余额/价格。", level="DEBUG")
+            self._clear_networks_balance_fee_price_ui() # 清除依赖字段
+            return
+
+        # 自动切换地址类型
+        if hasattr(self, 'available_address_types'):
+            # 根据币种确定对应的地址类型
+            address_type_map = {
+                'SUI': 'sui',
+                'SOL': 'sol',
+                'ETH': 'evm',
+                'USDT': 'evm',
+                'USDC': 'evm',
+                'G': 'evm'
+            }
+            
+            target_type = address_type_map.get(coin_text.upper())
+            if target_type and target_type in self.available_address_types:
+                # 如果目标类型在可用类型列表中，则切换
+                self.log_message(f"自动切换地址类型为: {target_type}", level="INFO")
+                self.current_address_type = target_type
+                # 重新加载当前类型的地址
+                self._load_addresses_for_current_type()
+
+        # 1. 更新选定币种的网络
+        self._update_networks_display(coin_text)
+        # 2. 更新选定币种的余额
+        self._update_balance_display(coin_text)
+        # 3. 更新选定币种的价格（与USDT或默认报价）
+        # 4. 费用更新通常由网络选择触发，
+        #    但如果自动选择了网络，其处理程序应该更新费用。
+        #    如果填充了网络并且_update_networks_display默认选择了一个网络，
+        #    那么应该触发update_usd_values_on_network_change（on_network_selected）。
+
+        # 原始调用update_usd_values - 如果涉及币种价格，这可能是放置它的好地方
+        self.update_usd_values(force_update=True) # force_update可能与价格获取有关
+
+    def _update_networks_display(self, coin_text: str):
+        """更新网络下拉框显示指定币种的可用网络"""
+        if not hasattr(self, 'network_combo') or not self.current_exchange_api:
+            return
+        self.network_combo.blockSignals(True)
+        self.network_combo.clear()
+        self.network_combo.setEnabled(False)
+        try:
+            self.log_message(f"为币种 {coin_text} 请求网络列表...", level="DEBUG")
+            networks = self.current_exchange_api.get_networks_for_coin(coin=coin_text)
+            if networks:
+                self.network_combo.addItems(networks)
+                self.network_combo.setEnabled(True)
+                self.log_message(f"为币种 {coin_text} 填充了 {len(networks)} 个网络。", level="INFO")
+                if self.network_combo.count() > 0:
+                    self.network_combo.setCurrentIndex(0) 
+                    self.network_combo.blockSignals(False)
+                    self.update_usd_values_on_network_change(self.network_combo.currentText())
+                return
+            else:
+                self.log_message(f"{self.current_exchange_name} 未返回币种 {coin_text} 的网络信息。", level="WARNING")
+        except Exception as e:
+            self.log_message(f"获取 {coin_text} 的网络列表时出错: {e}", level="ERROR", exc_info=True)
+        self.network_combo.blockSignals(False)
+        if hasattr(self, 'fee_label'): self.fee_label.setText("手续费: N/A")
+        
+    def update_usd_values_on_network_change(self, network_text: str):
+        """当网络下拉框选择变化时调用此方法。
+           更新手续费。
+        """        
+        self.logger.debug(f"网络选择已更改为: {network_text}")
+        if not self.current_exchange_api or not hasattr(self, 'coin_combo') or not self.coin_combo.currentText() or not network_text:
+            self.log_message("API未就绪、未选择币种或网络，无法更新手续费。", level="DEBUG")
+            if hasattr(self, 'fee_label'): self.fee_label.setText("手续费: N/A")
+            return
+        selected_coin = self.coin_combo.currentText()
+        self._update_fee_display(selected_coin, network_text)
+        
+    def _update_fee_display(self, coin: str, network: str):
+        """根据当前选择的币种和网络，获取并更新提现手续费的UI显示。"""
+        if not hasattr(self, 'fee_label') or not self.current_exchange_api:
+            self.logger.debug("_update_fee_display: fee_label 未找到或API未连接，跳过手续费更新。")
+            return
+                
+        self.fee_label.setText("手续费: 正在加载...")
+        try:
+            self.logger.debug(f"为币种 {coin} ({network}) 请求手续费...")
+            # 注意：get_withdrawal_fee 可能返回字符串 "fee asset" 或字典，或None
+            fee_data = self.current_exchange_api.get_withdrawal_fee(coin=coin, network=network)
+            
+            if fee_data is not None:
+                if isinstance(fee_data, str): # 例如直接返回 "0.001 BTC"
+                    # 如果API返回的是 "fee asset" 格式，并且我们希望只显示 "fee asset"
+                    # 或者，如果API只返回费率数字字符串，我们需要加上币种
+                    # 假设BaseExchangeAPI的实现会返回一个可以直接显示的字符串或一个包含fee和asset的字典
+                    self.fee_label.setText(f"手续费: {fee_data}") 
+                    self.logger.info(f"更新手续费 for {coin} on {network}: {fee_data}")
+                elif isinstance(fee_data, dict):
+                    fee_amount = fee_data.get('fee')
+                    fee_asset = fee_data.get('asset', coin) # 如果字典没提供asset，默认用当前币种
+                    if fee_amount is not None:
+                        self.fee_label.setText(f"手续费: {fee_amount} {fee_asset}")
+                        self.logger.info(f"更新手续费 for {coin} on {network}: {fee_amount} {fee_asset}")
+                    else: # else for 'if fee_amount is not None:'
+                        self.fee_label.setText("手续费: N/A (数据格式错误)")
+                        self.logger.warning(f"获取 {coin} ({network}) 手续费成功，但数据格式不包含 'fee'。 数据: {fee_data}")
+                else: # else for 'if isinstance(str) / elif isinstance(dict)'
+                    # 如果返回了非预期的类型
+                    self.fee_label.setText(f"手续费: {str(fee_data)}") 
+                    self.logger.warning(f"获取 {coin} ({network}) 手续费返回了未知类型: {type(fee_data)}, 内容: {fee_data}")
+            else: # else for 'if fee_data is not None:'
+                self.fee_label.setText("手续费: N/A")
+                self.logger.warning(f"无法获取 {coin} ({network}) 的手续费。API返回None。")
+        except Exception as e:
+            self.logger.error(f"更新 {coin} ({network}) 手续费时出错: {e}", exc_info=True)
+            self.fee_label.setText("手续费: 获取失败")
+            
+    def update_usd_values(self, force_update=False):
+        """更新界面上与USD估值相关的标签。价格数据固定从Binance获取。"""
+        if not hasattr(self, 'coin_combo') or not self.coin_combo.currentText():
+            if hasattr(self, 'min_amount_usd'): self.min_amount_usd.setText("≈$-.--")
+            if hasattr(self, 'max_amount_usd'): self.max_amount_usd.setText("≈$-.--")
+            return
+                
+        coin = self.coin_combo.currentText()
+        quote_currency = "USDT" 
+        price = None
+
+        if coin.upper() == quote_currency.upper():
+            price = Decimal(1.0)
+            self.logger.debug(f"USD估值: {coin} (稳定币) 价格设为 1.0")
+        else:
+            # 构造Binance交易对格式, e.g., ETHUSDT
+            binance_symbol_to_fetch = f"{coin.upper()}{quote_currency.upper()}"
+            self.logger.debug(f"USD估值: 使用Binance API获取 {binance_symbol_to_fetch} 的价格。")
+            
+            price_str = None
+            # 检查缓存
+            if not force_update and binance_symbol_to_fetch in self.price_cache:
+                price_str = self.price_cache.get(binance_symbol_to_fetch)
+                if price_str: # Ensure cached value is not None or empty before logging
+                    self.logger.debug(f"USD估值: 使用缓存价格 {price_str} for {binance_symbol_to_fetch}")
+            
+            # 如果缓存未命中或强制更新, 则从API获取
+            if not price_str:
+                if self.price_provider_api and self.binance_api_for_prices_connected:
+                    try:
+                        self.logger.debug(f"USD估值: 正在为 {binance_symbol_to_fetch} 通过Binance API请求价格...")
+                        price_str = self.price_provider_api.get_symbol_ticker(symbol=binance_symbol_to_fetch)
+                        
+                        if price_str: # API返回了价格字符串
+                            self.price_cache[binance_symbol_to_fetch] = price_str 
+                            self.logger.info(f"USD估值: 通过Binance API获取到价格 {price_str} 并缓存 for {binance_symbol_to_fetch}")
+                        else: # API调用成功但未返回价格 (e.g.,交易对不存在)
+                            self.logger.warning(f"USD估值: Binance API未能返回 {binance_symbol_to_fetch} 的价格。")
+                            # 可选: 清除可能存在的旧缓存，以防显示错误价格
+                            if binance_symbol_to_fetch in self.price_cache: 
+                                del self.price_cache[binance_symbol_to_fetch]
+                    except Exception as e_price_fetch:
+                        self.logger.error(f"USD估值: 通过Binance API获取 {binance_symbol_to_fetch} 价格时出错: {e_price_fetch}", exc_info=True)
+                        price_str = None # 确保出错时price_str为None
+                else:
+                    self.logger.warning("USD估值: Binance价格数据源未连接或未初始化。无法获取实时价格。")
+                    # price_str 保持 None
+
+            # 转换价格字符串为Decimal
+            if price_str:
+                try:
+                    price = Decimal(price_str)
+                except Exception as e_decimal_conversion:
+                    self.logger.error(f"USD估值: 无法将价格字符串 '{price_str}' (来自 {binance_symbol_to_fetch}) 转换为Decimal: {e_decimal_conversion}")
+                    price = None 
+        
+        # 更新UI上的USD估值
+        min_amount_usd_label = getattr(self, 'min_amount_usd', None)
+        max_amount_usd_label = getattr(self, 'max_amount_usd', None)
+
+        if price is not None:
+            try:
+                if hasattr(self, 'min_amount_entry') and min_amount_usd_label:
+                    min_val_str = self.min_amount_entry.text().strip() or "0"
+                    min_val = Decimal(min_val_str)
+                    min_amount_usd_label.setText(f"≈${float(min_val * price):.2f}")
+                
+                if hasattr(self, 'max_amount_entry') and max_amount_usd_label:
+                    max_val_str = self.max_amount_entry.text().strip() or "0"
+                    max_val = Decimal(max_val_str)
+                    max_amount_usd_label.setText(f"≈${float(max_val * price):.2f}")
+            except Exception as e_ui_update:
+                self.logger.error(f"USD估值UI更新错误: {e_ui_update}", exc_info=True)
+                if min_amount_usd_label: min_amount_usd_label.setText("≈$?.??")
+                if max_amount_usd_label: max_amount_usd_label.setText("≈$?.??")
+        else:
+            if min_amount_usd_label: min_amount_usd_label.setText("≈$N/A")
+            if max_amount_usd_label: max_amount_usd_label.setText("≈$N/A")
+            self.logger.debug(f"USD估值：因无法获取 {coin}/{quote_currency} (via Binance) 价格，估值显示为 N/A。")
+
+    def _update_balance_display(self, coin_text: str):
+        if not hasattr(self, 'balance_label') or not self.current_exchange_api:
+            return
+            
+        # 检查缓存
+        cache_key = f"{self.current_exchange_name}_{coin_text}"
+        current_time = time.time()
+        if cache_key in self.balance_cache:
+            balance_str, timestamp = self.balance_cache[cache_key]
+            if current_time - timestamp < self.balance_cache_ttl:
+                self.logger.debug(f"使用缓存的余额数据: {coin_text} ({self.current_exchange_name})")
+                self._handle_balance_result(balance_str, coin_text)
+                return
+        
+        self.balance_label.setText("余额: 正在加载...")
+        
+        # --- 开始改进的线程清理 ---
+        # 在访问前检查线程对象是否存在且有效
+        thread_to_clean = getattr(self, 'balance_thread', None)
+        if thread_to_clean is not None:
+            try:
+                if thread_to_clean.isRunning():
+                    self.log_message("正在停止之前的余额查询线程...", level="DEBUG")
+                    thread_to_clean.quit()
+                    if not thread_to_clean.wait(3000): # 等待3秒
+                        self.log_message("之前的余额线程未能正常退出，可能导致问题。", level="WARNING")
+                    else:
+                        self.log_message("之前的余额线程已停止。", level="DEBUG")
+                else:
+                    self.log_message("之前的余额线程已结束或未运行。", level="DEBUG")
+                    
+                # 请求删除旧线程和worker
+                worker_to_delete = getattr(self, 'balance_worker', None)
+                if worker_to_delete:
+                    worker_to_delete.deleteLater()
+                thread_to_clean.deleteLater()
+
+            except RuntimeError: # 捕获对象已被删除的错误
+                self.log_message("尝试清理余额线程时出错：对象可能已被删除。", level="DEBUG")
+            except Exception as e_clean: # 捕获其他潜在错误
+                self.log_message(f"清理余额线程时发生未知错误: {e_clean}", level="ERROR")
+                
+        self.balance_thread = None # 显式设置None
+        self.balance_worker = None
+        # --- 结束改进的线程清理 ---
+        
+        # 创建新的线程和工作器
+        self.balance_thread = QThread()
+        # 将线程添加到引用存储列表 (暂时保留)
+        if hasattr(self, 'thread_references'): self.thread_references.append(self.balance_thread)
+        
+        self.balance_worker = BalanceWorker(self.current_exchange_api, coin_text)
+        self.balance_worker.moveToThread(self.balance_thread)
+        
+        # 连接信号
+        self.balance_thread.started.connect(self.balance_worker.run)
+        self.balance_worker.finished.connect(self._handle_balance_result)
+        self.balance_worker.error.connect(self._handle_balance_error)
+        self.balance_worker.log_message.connect(lambda msg, level: self.log_message(msg, level=level))
+        
+        # --- 改进的清理连接 ---
+        # 当worker完成或出错时，请求线程退出
+        self.balance_worker.finished.connect(self.balance_thread.quit)
+        self.balance_worker.error.connect(self.balance_thread.quit)
+        # 当线程结束后，请求删除worker和线程自身
+        self.balance_thread.finished.connect(self.balance_worker.deleteLater)
+        self.balance_thread.finished.connect(self.balance_thread.deleteLater)
+        # --- 结束改进的清理连接 ---
+        
+        # 启动线程
+        self.balance_thread.start()
+        
+    def _handle_balance_result(self, balance_str, coin):
+        """处理余额查询结果"""
+        if not hasattr(self, 'balance_label'):
+            return
+            
+        try:
+            # 更新缓存
+            cache_key = f"{self.current_exchange_name}_{coin}"
+            self.balance_cache[cache_key] = (balance_str, time.time())
+            
+            # 格式化余额显示为小数点后两位
+            try:
+                balance_decimal = Decimal(balance_str)
+                formatted_balance = f"{balance_decimal:.2f}" # 格式化为两位小数
+            except Exception:
+                formatted_balance = balance_str # 如果转换失败，显示原始字符串
+
+            self.balance_label.setText(f"余额: {formatted_balance}")
+            self.log_message(f"已更新 {coin} 余额: {formatted_balance}", level="INFO")
+        except Exception as e:
+            self.log_message(f"处理余额结果时出错: {e}", level="ERROR")
+            self.balance_label.setText("余额: 处理错误")
+            
+    def _handle_balance_error(self, error_msg, coin):
+        """处理余额查询错误"""
+        if not hasattr(self, 'balance_label'):
+            return
+            
+        self.log_message(f"查询 {coin} 余额失败: {error_msg}", level="ERROR")
+        self.balance_label.setText("余额: 查询失败")
+        
+    def _update_status_bar_time(self):
+        """更新状态栏中的时间显示"""
+        try:
+            current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            if hasattr(self, 'statusBar'):
+                # 这里不会覆盖其他状态消息，因为我们使用设置一个永久widget而不是showMessage
+                # 如果需要显示时间，可以在状态栏中添加一个专用的QLabel
+                pass
+        except Exception as e:
+            self.logger.error(f"更新状态栏时间时出错: {str(e)}", exc_info=True)
+            
+    def _post_initial_ui_setup(self):
+        """在UI初始化和API初始化后调用，用于完成最终的UI设置和优化"""
+        try:
+            # 恢复保存的窗口状态
+            try:
+                gui_settings_file = os.path.join(self.app_data_dir, "GuiState.ini")
+                if os.path.exists(gui_settings_file):
+                    q_settings = QSettings(gui_settings_file, QSettings.Format.IniFormat)
+                    if q_settings.contains("geometry"):
+                        self.restoreGeometry(q_settings.value("geometry"))
+                    if q_settings.contains("windowState"):
+                        self.restoreState(q_settings.value("windowState"))
+                    self.logger.debug("已恢复之前保存的窗口几何状态。")
+            except Exception as e:
+                self.logger.warning(f"恢复窗口几何状态失败: {e}")
+                
+            # 如果需要异步加载其他UI元素或数据，可以在这里添加
+        except Exception as e:
+            self.log_message(f"最终UI设置时出错: {str(e)}", level="ERROR", exc_info=True)
+
+    def _open_external_link(self, url_string: str):
+        """在默认浏览器中打开外部链接。"""
+        try:
+            url = QUrl(url_string)
+            if url.isValid():
+                self.log_message(f"正在尝试打开外部链接: {url_string}", level="DEBUG")
+                opened = QDesktopServices.openUrl(url)
+                if not opened:
+                    self.log_message(f"无法打开链接: {url_string}", level="WARNING")
+                    QMessageBox.warning(self, "打开链接失败", f"无法自动打开链接：\n{url_string}\n\n您可以手动复制并在浏览器中打开。")
+            else:
+                self.log_message(f"提供的URL无效: {url_string}", level="ERROR")
+                QMessageBox.warning(self, "链接无效", f"提供的链接格式无效：\n{url_string}")
+        except Exception as e:
+            self.log_message(f"打开外部链接时出错: {e}", level="ERROR", exc_info=True)
+            QMessageBox.critical(self, "错误", f"尝试打开链接时发生错误：{e}")
 
 if __name__ == "__main__":
-    # 创建 QApplication 实例
-    app = QApplication(sys.argv)
-    
-    # 应用深色主题样式
-    app.setStyleSheet(DARK_STYLE) # DARK_STYLE 变量应在您的代码中定义
-    
-    # 创建 WithdrawalHelper 主窗口实例
-    main_window = WithdrawalHelper()
-    
-    # 显示主窗口
-    main_window.show()
-    
-    # 进入 Qt 事件循环
-    sys.exit(app.exec())
+    try:
+        # 创建 QApplication 实例
+        app = QApplication(sys.argv)
+        
+        # 应用深色主题样式
+        app.setStyleSheet(DARK_STYLE) # DARK_STYLE 变量应在您的代码中定义
+        
+        # 创建 WithdrawalHelper 主窗口实例
+        main_window = WithdrawalHelper()
+        
+        # 添加应用程序退出前的清理函数
+        def cleanup():
+            print("正在清理应用程序资源...")
+            # 确保所有线程都被正确清理
+            if hasattr(main_window, 'thread_references'):
+                main_window.thread_references.clear()
+            logging.shutdown()
+            # 移除强制退出
+            # import os
+            # os._exit(0) 
+            
+        app.aboutToQuit.connect(cleanup)
+        
+        # 显示主窗口
+        main_window.show()
+        
+        # 进入 Qt 事件循环
+        sys.exit(app.exec())
+    except Exception as e:
+        print(f"程序出错: {e}")
+    finally:
+        # 确保程序退出前清理所有资源
+        logging.shutdown()
+

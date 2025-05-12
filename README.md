@@ -1,6 +1,6 @@
 <div align="center">
 
-# 多交易所提币助手 V1.1.0
+# 多交易所提币助手 V1.2.0
 
 [![Python](https://img.shields.io/badge/Python-3.12.5%2B-3776AB.svg?style=flat&logo=python&logoColor=white)](https://www.python.org/downloads/release/python-3125/)
 [![Windows](https://img.shields.io/badge/Windows-10%2B-0078D6.svg?style=flat&logo=windows&logoColor=white)](https://www.microsoft.com/windows)
@@ -36,6 +36,8 @@
 - 支持批量提币，可设置**提币间隔和大额阈值预警**
 - 保存多交易所提币历史记录
 - 支持大额提币二次确认
+- **UI 优化**: 界面操作更流畅，日志显示更简洁（隐藏 DEBUG 信息）。
+- **作者链接**: 工具栏添加作者 Twitter 链接，方便联系与关注。
 
     <img src="https://github.com/user-attachments/assets/f61c4c88-baa8-4dbf-8647-599fcebbf9a7" alt="image" width="200"/>
     <img src="https://github.com/user-attachments/assets/df73399c-a697-430c-9f98-a77f1945e8a7" alt="image" width="200"/>
@@ -131,6 +133,13 @@
 
 ## ❇️ 更新日志
 
+### v1.2.0
+- **性能优化**: 采用异步操作处理 API 调用，显著提升界面响应速度和流畅性。
+- **线程管理**: 修复了多线程相关的潜在崩溃和错误。
+- **UI 改进**: 优化余额显示格式，过滤 UI 日志中的 DEBUG 信息。
+- **功能增强**: 工具栏添加作者 Twitter 链接。
+- **稳定性**: 修复了多处已知 Bug 和潜在问题。
+
 ### v1.1.0
 - 支持多交易所（Binance、OKX）
 - 自动识别地址类型，移除手动选择
@@ -138,12 +147,6 @@
 - OKX特殊地址格式自动处理
 - UI细节优化与风格统一
 
-### v1.0.0
-- 初始版本发布
-- 支持基本提币功能
-- 支持地址验证
-- 支持历史记录
-
-## �� 许可证
+## 许可证
 
 MIT License 
