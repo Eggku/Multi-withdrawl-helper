@@ -6,7 +6,7 @@
 [![Windows](https://img.shields.io/badge/Windows-10%2B-0078D6.svg?style=flat&logo=windows&logoColor=white)](https://www.microsoft.com/windows)
 [![License](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
-**作者：l445698714**
+**作者：Monsterjane**
 <br />
 [![GitHub](https://img.shields.io/badge/GitHub-l445698714-lightgrey.svg?style=flat&logo=github&logoColor=black)](https://github.com/l445698714)
 [![X (Twitter)](https://img.shields.io/badge/X_StayrealLoL-1DA1F2.svg?style=flat&logo=x&logoColor=white)](https://x.com/StayrealLoL)
