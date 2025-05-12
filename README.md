@@ -1,4 +1,4 @@
-<<<<<<< HEAD
+
 <div align="center">
 
 # 多交易所提币助手 V1.1.0
