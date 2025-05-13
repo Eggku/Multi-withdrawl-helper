@@ -532,10 +532,8 @@ class WithdrawalHelper(QMainWindow):
         # 添加Twitter链接
         twitter_label = QLabel()
         twitter_url = "https://x.com/StayrealLoL"
-        icon_path = "twitter.png" # Relative path to the icon
-        # 使用Twitter蓝色，移除下划线，添加图标
+        # 使用Twitter蓝色，移除下划线，移除图标
         twitter_label.setText(f'''<a href="{twitter_url}" style="color: #1DA1F2; text-decoration: none;">
-                               <img src="{icon_path}" width="14" height="14" style="vertical-align: middle;"> 
                                关注作者Twitter</a>''') 
         twitter_label.setTextFormat(Qt.TextFormat.RichText)
         twitter_label.setToolTip(f"访问开发者Twitter: {twitter_url}")
