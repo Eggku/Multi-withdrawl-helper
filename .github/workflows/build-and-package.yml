@@ -25,6 +25,12 @@ jobs:
         run: chcp 65001
         shell: pwsh
 
+      - name: 🚀 强制 Python 使用 UTF-8
+        run: |
+          echo "PYTHONUTF8=1" >> $GITHUB_ENV
+          echo "export PYTHONUTF8=1" >> $GITHUB_ENV
+        shell: pwsh
+
       - name: 🚀 强制安装依赖
         run: |
           python -m pip install --upgrade pip
@@ -33,8 +39,9 @@ jobs:
 
       - name: 🚀 修复 `UnicodeEncodeError`
         run: |
-          echo "import sys, codecs" > fix_encoding.py
-          echo "sys.stdout = codecs.getwriter('utf-8')(sys.stdout.buffer)" >> fix_encoding.py
+          echo "import sys, os" > fix_encoding.py
+          echo "os.environ['PYTHONUTF8'] = '1'" >> fix_encoding.py
+          echo "sys.stdout.reconfigure(encoding='utf-8')" >> fix_encoding.py
           python fix_encoding.py
         shell: pwsh
 
