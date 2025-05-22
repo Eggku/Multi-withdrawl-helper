@@ -1,60 +1,62 @@
-name: Automate Build and Package Python App
+name: Build and Release MultiWithdrawalHelper
 
 on:
   push:
-    branches: [ main ]
-  workflow_dispatch:
+    branches:
+      - main  # 🚀 当代码推送到 `main` 分支时触发构建
+  workflow_dispatch:  # ✅ 允许手动运行工作流
 
 jobs:
   build:
-    runs-on: ubuntu-latest  # 如果是 Windows 相关问题，请改为 'windows-latest'
+    runs-on: windows-latest  # 🖥 运行 Windows 服务器（用于打包 .exe）
+    permissions:
+      contents: write
 
     steps:
-      - name: Checkout code
+      - name: 🛠 检出代码
         uses: actions/checkout@v3
 
-      - name: Set up Python
-        uses: actions/setup-python@v4
-        with:
-          python-version: '3.12.5'
-
-      - name: Create Virtual Environment and Install Dependencies
+      - name: 🛠 安装 Python 依赖
         run: |
-          set -x  # 启用命令调试
-          echo "正在创建虚拟环境..."
-          python -m venv venv
-          source venv/bin/activate  # 在 Ubuntu 上激活虚拟环境
-          echo "正在安装依赖..."
           python -m pip install --upgrade pip
-          if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
-          echo "依赖安装完成。列出已安装包："
-          pip list
-          if [ $? -ne 0 ]; then echo "错误：依赖安装失败！"; exit 1; fi  # 检查安装是否成功
+          pip install -r requirements.txt
+        shell: pwsh
 
-      - name: Build and Package Application
-        run: |
-          set -x
-          echo "激活虚拟环境..."
-          source venv/bin/activate
-          echo "开始运行 build.py..."
-          python build.py || { echo "错误：build.py 执行失败！"; exit 1; }  # 如果失败，输出错误并停止
-          echo "构建过程完成。"
+      - name: ⚙️ 构建可执行文件
+        run: python build.py
+        shell: pwsh
 
-      - name: Debug Output Directory
-        run: |
-          set -x
-          echo "检查 dist_packages/ 目录..."
-          if [ -d "dist_packages/" ]; then
-            ls -la dist_packages/
-            echo "目录存在且包含文件。"
-          else
-            echo "错误：dist_packages/ 目录不存在！"
-            exit 1
-          fi
-
-      - name: Upload Artifact
-        uses: actions/upload-artifact@v4
+      - name: 🚀 上传构建产物（MultiWithdrawalHelper.exe）
+        uses: actions/upload-artifact@v3
         with:
-          name: packaged-app
-          path: dist_packages/
-          if-no-files-found: error
+          name: MultiWithdrawalHelper
+          path: dist_packages/MultiWithdrawalHelper_v*/MultiWithdrawalHelper.exe
+
+  release:
+    needs: build
+    runs-on: ubuntu-latest  # 🚀 在 Linux 环境执行发布任务
+    permissions:
+      contents: write
+
+    steps:
+      - name: 🛠 检出代码
+        uses: actions/checkout@v3
+
+      - name: 🚀 下载构建产物
+        uses: actions/download-artifact@v3
+        with:
+          name: MultiWithdrawalHelper
+          path: release_files
+
+      - name: 🚀 创建 GitHub Release
+        uses: softprops/action-gh-release@v1
+        with:
+          files: release_files/MultiWithdrawalHelper.exe  # ✅ 上传 `MultiWithdrawalHelper.exe`
+          tag_name: latest
+          name: "MultiWithdrawalHelper Release"
+          body: |
+            🔥 **新版本发布！**
+            - 🎯 自动构建可执行文件
+            - 🚀 版本号: `${{ github.sha }}`
+          draft: false
+          prerelease: false
