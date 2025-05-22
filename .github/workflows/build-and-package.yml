@@ -1,9 +1,12 @@
-name: Build and Release MultiWithdrawalHelper
+name: Auto Build and Package MultiWithdrawalHelper
 
 on:
   push:
     branches:
-      - main  # 🚀 当代码推送到 `main` 分支时触发构建
+      - main  # 🚀 代码推送到 `main` 时触发
+  pull_request:
+    branches:
+      - main
   workflow_dispatch:  # ✅ 允许手动运行工作流
 
 jobs:
@@ -16,40 +19,48 @@ jobs:
       - name: 🛠 检出代码
         uses: actions/checkout@v3
 
-      - name: 🛠 安装 Python 3.12.5
-        uses: actions/setup-python@v4
-        with:
-          python-version: "3.12.5"
-
-      - name: 🚀 强制设置 Python 终端使用 UTF-8
-        run: |
-          echo "PYTHONUTF8=1" >> $GITHUB_ENV
-          echo "PYTHONIOENCODING=utf-8" >> $GITHUB_ENV
-        shell: pwsh
-
       - name: 🚀 设置 Windows 终端 UTF-8 编码
         run: |
           chcp 65001
           [System.Console]::OutputEncoding = [System.Text.Encoding]::UTF8
         shell: pwsh
 
-      - name: 🚀 强制安装依赖
+      - name: 🛠 安装 Python 3.12.5
+        uses: actions/setup-python@v4
+        with:
+          python-version: "3.12.5"
+
+      - name: 🚀 强制 Python 使用 UTF-8
+        run: |
+          echo "PYTHONUTF8=1" >> $GITHUB_ENV
+          echo "PYTHONIOENCODING=utf-8" >> $GITHUB_ENV
+        shell: pwsh
+
+      - name: 🚀 安装 Python 依赖
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
+        shell: pwsh
+
+      - name: 🚀 安装 `PyInstaller`
+        run: pip install pyinstaller
         shell: pwsh
 
       - name: 🚀 运行 Python 以检查默认编码
         run: python -c "import sys; print(sys.getdefaultencoding())"
         shell: pwsh
 
-      - name: 🚀 运行 `python build.py` 生成 `.exe`
-        run: python build.py
+      - name: 🚀 打包 `MultiWithdrawalHelper.exe`
+        run: |
+          pyinstaller --onefile --windowed --icon=app.ico --noupx \
+          --hidden-import=win32gui --hidden-import=requests --hidden-import=keyboard \
+          --hidden-import=mouse --hidden-import=wmi --hidden-import=sv_ttk \
+          --hidden-import=PIL --hidden-import=win11toast main_qt.py
         shell: pwsh
 
       - name: 🚀 确保 `.exe` 文件已正确生成
         run: |
-          if (!(Test-Path "dist_packages/MultiWithdrawalHelper_v*/*.exe")) {
+          if (!(Test-Path "dist/MultiWithdrawalHelper.exe")) {
             Write-Error "❌ MultiWithdrawalHelper.exe 未找到，构建失败！"
             exit 1
           }
@@ -59,7 +70,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: MultiWithdrawalHelper
-          path: dist_packages/MultiWithdrawalHelper_v*/MultiWithdrawalHelper.exe
+          path: dist/MultiWithdrawalHelper.exe
 
   release:
     needs: build
