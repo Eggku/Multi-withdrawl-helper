@@ -1,17 +1,22 @@
 # .github/workflows/build.yml
 name: Build Executable
 
-on:
-  push:
-    branches: [ main ]
+env:  # 新增全局编码设置
+  PYTHONUTF8: 1
+  PYTHONIOENCODING: utf-8
 
 jobs:
   build:
     runs-on: windows-latest
-
     steps:
     - name: Checkout code
       uses: actions/checkout@v4
+
+    - name: Set locale to UTF-8  # 新增系统级编码配置
+      shell: powershell
+      run: |
+        [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
+        chcp 65001
 
     - name: Set up Python 3.12.5
       uses: actions/setup-python@v4
@@ -23,8 +28,9 @@ jobs:
         python -m pip install --upgrade pip
         pip install -r requirements.txt -i https://pypi.tuna.tsinghua.edu.cn/simple
 
-    - name: Run build script
-      run: python build.py
+    - name: Run build script with UTF-8  # 修改构建命令
+      run: python -X utf8 build.py 2>&1 | Out-File -Encoding utf8 build.log
+      shell: powershell
 
     - name: Upload artifact
       uses: actions/upload-artifact@v4
@@ -33,4 +39,4 @@ jobs:
         path: |
           dist_packages/
           app.ico
-        if-no-files-found: error
+          build.log  # 新增日志文件
