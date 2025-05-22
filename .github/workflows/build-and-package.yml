@@ -35,6 +35,14 @@ jobs:
         run: python build.py
         shell: pwsh
 
+      - name: 🚀 确保 `.exe` 文件已正确生成
+        run: |
+          if (!(Test-Path "dist_packages/MultiWithdrawalHelper_v*/*.exe")) {
+            Write-Error "❌ MultiWithdrawalHelper.exe 未找到，构建失败！"
+            exit 1
+          }
+        shell: pwsh
+
       - name: 🚀 上传构建产物（MultiWithdrawalHelper.exe）
         uses: actions/upload-artifact@v4
         with:
@@ -56,6 +64,14 @@ jobs:
         with:
           name: MultiWithdrawalHelper
           path: release_files
+
+      - name: 🚀 确保 `.exe` 文件已下载
+        run: |
+          if [ ! -f "release_files/MultiWithdrawalHelper.exe" ]; then
+            echo "❌ MultiWithdrawalHelper.exe 未找到，发布失败！"
+            exit 1
+          fi
+        shell: bash
 
       - name: 🚀 创建 GitHub Release
         uses: softprops/action-gh-release@v1
