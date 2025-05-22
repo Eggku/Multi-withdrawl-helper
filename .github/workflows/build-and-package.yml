@@ -28,7 +28,7 @@ jobs:
       - name: 🚀 强制 Python 使用 UTF-8
         run: |
           echo "PYTHONUTF8=1" >> $GITHUB_ENV
-          echo "export PYTHONUTF8=1" >> $GITHUB_ENV
+          echo "PYTHONIOENCODING=utf-8" >> $GITHUB_ENV
         shell: pwsh
 
       - name: 🚀 强制安装依赖
@@ -37,12 +37,8 @@ jobs:
           pip install -r requirements.txt
         shell: pwsh
 
-      - name: 🚀 修复 `UnicodeEncodeError`
-        run: |
-          echo "import sys, os" > fix_encoding.py
-          echo "os.environ['PYTHONUTF8'] = '1'" >> fix_encoding.py
-          echo "sys.stdout.reconfigure(encoding='utf-8')" >> fix_encoding.py
-          python fix_encoding.py
+      - name: 🚀 运行 Python 以检查默认编码
+        run: python -c "import sys; print(sys.getdefaultencoding())"
         shell: pwsh
 
       - name: 🚀 运行 `python build.py` 生成 `.exe`
