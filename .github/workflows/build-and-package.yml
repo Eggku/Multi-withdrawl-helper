@@ -21,14 +21,21 @@ jobs:
         with:
           python-version: "3.12.5"
 
-      - name: 🚀 检查 Python 版本
-        run: python --version
+      - name: 🚀 设置 Windows 终端 UTF-8 编码
+        run: chcp 65001
         shell: pwsh
 
-      - name: 🚀 安装 Python 依赖
+      - name: 🚀 强制安装依赖
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
+        shell: pwsh
+
+      - name: 🚀 修复 `UnicodeEncodeError`
+        run: |
+          echo "import sys, codecs" > fix_encoding.py
+          echo "sys.stdout = codecs.getwriter('utf-8')(sys.stdout.buffer)" >> fix_encoding.py
+          python fix_encoding.py
         shell: pwsh
 
       - name: 🚀 运行 `python build.py` 生成 `.exe`
