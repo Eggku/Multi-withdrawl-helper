@@ -7,7 +7,7 @@ on:
 
 jobs:
   build:
-    runs-on: ubuntu-latest  # Switch to 'windows-latest' if Windows-specific errors persist
+    runs-on: ubuntu-latest  # 如果是 Windows 相关问题，请改为 'windows-latest'
 
     steps:
       - name: Checkout code
@@ -20,35 +20,35 @@ jobs:
 
       - name: Create Virtual Environment and Install Dependencies
         run: |
-          set -x  # Enable command debugging
-          echo "Creating virtual environment..."
+          set -x  # 启用命令调试
+          echo "正在创建虚拟环境..."
           python -m venv venv
-          source venv/bin/activate  # For Ubuntu; if using windows-latest, this will adjust
-          echo "Installing dependencies..."
+          source venv/bin/activate  # 在 Ubuntu 上激活虚拟环境
+          echo "正在安装依赖..."
           python -m pip install --upgrade pip
           if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
-          echo "Dependencies installed. Listing installed packages:"
-          pip list  # Log installed packages for debugging
-          if [ $? -ne 0 ]; then echo "Error: Dependency installation failed!"; exit 1; fi  # Check for errors
+          echo "依赖安装完成。列出已安装包："
+          pip list
+          if [ $? -ne 0 ]; then echo "错误：依赖安装失败！"; exit 1; fi  # 检查安装是否成功
 
       - name: Build and Package Application
         run: |
           set -x
-          echo "Activating virtual environment..."
-          source venv/bin/activate  # Ensure we're in the virtual env
-          echo "Starting build process with build.py..."
-          python build.py || { echo "Error: build.py failed!"; exit 1; }  # Explicitly handle failure
-          echo "Build process completed successfully."
+          echo "激活虚拟环境..."
+          source venv/bin/activate
+          echo "开始运行 build.py..."
+          python build.py || { echo "错误：build.py 执行失败！"; exit 1; }  # 如果失败，输出错误并停止
+          echo "构建过程完成。"
 
       - name: Debug Output Directory
         run: |
           set -x
-          echo "Checking for dist_packages/ directory..."
+          echo "检查 dist_packages/ 目录..."
           if [ -d "dist_packages/" ]; then
             ls -la dist_packages/
-            echo "Directory exists and contains files."
+            echo "目录存在且包含文件。"
           else
-            echo "Error: Directory dist_packages/ does not exist!"
+            echo "错误：dist_packages/ 目录不存在！"
             exit 1
           fi
 
@@ -57,4 +57,4 @@ jobs:
         with:
           name: packaged-app
           path: dist_packages/
-          if-no-files-found: error  # This will error if the path is empty, for clarity
+          if-no-files-found: error
