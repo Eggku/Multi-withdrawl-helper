@@ -1033,16 +1033,10 @@ class WithdrawalHelper(QMainWindow):
         elif action == "stop_withdrawal":
             self.stop_withdrawal()
 
-    def update_progress(self, value):
-        """更新进度条"""
+    def update_progress(self, value, text):
+        """更新进度条和进度文本"""
         self.progress_bar.setValue(value)
-        try:
-            current = int(value * self.total_rows / 100)
-            total = self.total_rows
-        except Exception:
-            current = 0
-            total = 0
-        self.progress_label.setText(f"进度: {current}/{total}")
+        self.progress_label.setText(text)
 
     def update_wait(self, value, text):
         self.wait_bar.setValue(value)
@@ -1691,7 +1685,7 @@ class WithdrawalHelper(QMainWindow):
             if hasattr(self, 'start_button'): self.start_button.setEnabled(True)
             if hasattr(self, 'stop_button'): self.stop_button.setEnabled(False)
             # 重置进度条和等待条 (虽然线程finally里也做了，这里再做一次确保UI更新)
-            self.update_progress(0)  # Reset progress
+            self.update_progress(0, "等待: 0秒")  # Reset progress
             self.update_wait(0, "等待: 0秒") # Reset wait
             QMessageBox.information(self, "操作停止", "提币流程已请求停止。")
         else:
@@ -1933,9 +1927,18 @@ class WithdrawalHelper(QMainWindow):
                              start_idx, end_idx, min_interval, max_interval):
         """后台提币处理线程 (处理带标签地址)."""
         self.log_message(f"提币线程开始: 处理地址索引 {start_idx} 到 {end_idx} ({coin} on {network})", level="INFO")
-        total_addresses_in_range = end_idx - start_idx + 1
+        
+        # 使用 self.total_rows 作为本次操作的总地址数，它在 start_withdrawal 中已正确设置
+        current_total_addresses_to_process = self.total_rows 
         processed_count = 0
         
+        # 创建一个从 start_idx 到 end_idx 的原始列表索引的列表
+        address_indices_in_range = list(range(start_idx, end_idx + 1))
+        # 随机打乱这些索引
+        random.shuffle(address_indices_in_range)
+        
+        self.log_message(f"地址处理顺序已随机化。总共 {current_total_addresses_to_process} 个地址。", level="DEBUG")
+
         # --- 获取手续费和精度 --- 
         fee_decimal = Decimal('0')
         actual_precision = 8 # 先设置一个默认精度
@@ -1986,150 +1989,195 @@ class WithdrawalHelper(QMainWindow):
 
         # --- 开始循环处理地址 ---
         try:
-            for i in range(start_idx, end_idx + 1):
+            # for i in range(start_idx, end_idx + 1): # 旧的顺序循环
+            for original_list_index in address_indices_in_range: # 迭代打乱后的索引
                 if not self.running: 
                     self.log_message("提币线程收到停止信号，正在退出...", level="INFO")
                     break
                 
-                # 获取当前地址信息 (字典)
-                current_address_info = self.current_addresses[i]
+                # 获取当前地址信息 (字典) - 通过打乱后的原始列表索引
+                current_address_info = self.current_addresses[original_list_index]
                 addr = current_address_info.get('address')
                 label = current_address_info.get('label') # 可能为 None
                 
+                # address_display_index 是原始列表中的1-based序号，用于日志和用户界面参考
+                address_display_index = original_list_index + 1 
+                
+                # 构造一个更清晰的日志条目头，显示当前处理的是随机顺序中的第几个，以及它在原始列表中的序号
+                # (processed_count + 1) 是当前正在处理的是第几个（基于1的计数）
+                log_prefix_for_address = f"[{processed_count + 1}/{current_total_addresses_to_process} (原始序号: {address_display_index})]"
+                self.log_message(f"{log_prefix_for_address} 开始处理地址: {label + ' (' + self._mask_addresses_in_text(addr) + ')' if label else self._mask_addresses_in_text(addr)}...", level="DEBUG")
+                
                 if not addr: # 如果地址为空，则跳过
-                    self.log_message(f"地址索引 {i+1} 的地址为空，跳过。", level="WARNING")
-                    processed_count += 1
-                    continue
-                
-                address_display_index = i + 1
-                self.log_message(f"[{address_display_index}/{total_addresses_in_range}] 处理地址: {label + ' (' + self._mask_addresses_in_text(addr) + ')' if label else self._mask_addresses_in_text(addr)}...", level="DEBUG")
-                
-                # --- 1. 生成随机数量并处理精度 ---
-                try:
-                    random_amount_raw = Decimal(random.uniform(float(min_amount), float(max_amount)))
-                    # 根据 *实际获取或默认的* 精度进行截断 (向下取整)
-                    quantizer = Decimal('1e-' + str(actual_precision))
-                    random_amount_quantized = random_amount_raw.quantize(quantizer, rounding=ROUND_DOWN)
-                    self.log_message(f"  -> 计划提币数量 (原始): {random_amount_raw:.18f} {coin}", level="DEBUG")
-                    self.log_message(f"  -> 计划提币数量 (量化到 {actual_precision} 位小数): {random_amount_quantized} {coin}", level="DEBUG")
+                    self.log_message(f"{log_prefix_for_address}  -> 地址为空，跳过。", level="WARNING")
+                    # processed_count 和进度条更新会在本次迭代末尾统一处理
+                    # 因此这里不需要单独增加 processed_count 或更新进度条
+                    # 直接进入下一次迭代，在迭代末尾统一处理计数和进度更新
+                    # 注意：continue 会跳过循环体中余下的部分，直接到下一次迭代的开始
+                    # 所以，统一的 processed_count++ 和进度更新必须在 continue 语句之后，或者在循环的固定位置
+                    # 当前选择的方案是将 processed_count++ 和进度更新放在每次迭代的末尾（但在随机等待之前）
+                    # 因此，如果 continue，这些末尾的更新逻辑不会执行。
+                    # 修正：如果 continue，也应该算作处理了一个地址，所以 processed_count 和进度条需要更新。
+                    # 最好的方式是将 processed_count 和进度条更新放在迭代的最后，但在 continue 语句之前处理特殊情况。
+                    # 或者，更简单的方式是：无论如何，每次迭代都增加 processed_count，然后更新进度。
+                    # 如果 continue，那么该次迭代的特定提币逻辑被跳过，但计数和进度照常。
+
+                    # 让我们将 processed_count 和进度更新移到迭代的末尾，但在随机等待之前。
+                    # 如果这里 continue，下面的提币逻辑不会执行。
+                    # 但 processed_count 仍应在迭代结束时增加。
+                    # 所以，如果 continue，需要确保迭代末尾的 processed_count++ 和进度更新能执行。
+                    # 不，如果 continue，它会直接跳到下一次 for 循环迭代。
+                    # 因此，如果 continue，必须在 continue 之前更新 processed_count 和进度。
+
+                    # 方案调整：
+                    # 1. 在 for 循环内部，但在任何 continue 之前，不进行 processed_count 或进度更新。
+                    # 2. 在 for 循环的每次迭代的 *最后*（但在随机等待之前），统一增加 processed_count 并更新进度。
+                    #    这意味着如果地址为空而 continue，该次迭代的末尾逻辑不会执行。这是不对的。
+
+                    # 正确的逻辑：
+                    # processed_count 在迭代开始时增加，或者在迭代结束时无条件增加。
+                    # 如果在迭代结束时无条件增加，那么 continue 语句会阻止它。
+                    # 所以，应该在迭代开始时就增加，或者在每个可能的退出点（continue, break）之前都处理。
+
+                    # 采用这个结构：
+                    # for ...:
+                    #   if break: ...
+                    #   try:
+                    #     if addr is None: continue
+                    #     // withdrawal logic, might continue
+                    #   finally:
+                    #     processed_count += 1
+                    #     // update progress
+                    # 这种 finally 结构可以保证计数和进度更新。
+
+                    # 让我们简化：如果地址为空，记录日志，然后直接到迭代末尾的计数和进度更新。
+                    # 这意味着提币的主要逻辑需要被包裹起来。
                     
-                    if random_amount_quantized <= 0:
-                         self.log_message(f"  -> 生成的提币数量过小 ({random_amount_quantized})，跳过此地址。", level="WARNING")
-                         processed_count += 1 # 算作处理过
-                         continue
-                except Exception as e_amount:
-                    self.log_message(f"生成或处理提币数量时出错: {e_amount}，跳过此地址 {address_display_index}", level="ERROR")
-                    processed_count += 1
-                    continue
+                    # 当前的 continue 会跳过迭代末尾的 processed_count++ 和进度更新。
+                    # 所以，如果 continue，必须在 continue 之前手动处理。
+                    # 这使得代码有点重复。
 
-                # --- 2. 大额提币检查 (应在余额检查之前) ---
-                if self.enable_warning and usd_price is not None:
-                    try:
-                        usd_value = random_amount_quantized * usd_price
-                        if usd_value >= Decimal(str(self.warning_threshold)):
-                            self.log_message(f"警告：地址 {address_display_index} 的提币金额 ${usd_value:.2f} 达到或超过阈值 ${self.warning_threshold:.2f}", level="WARNING")
-                            
-                            # 发出信号请求用户确认
-                            self.confirm_withdrawal_signal.emit(coin, network, random_amount_quantized, addr, None, True)
-                            
-                            # 清除事件标志并等待
-                            self.withdrawal_confirm_event.clear()
-                            self.log_message(f"  -> 等待用户确认大额提币 (地址: {self._mask_addresses_in_text(addr)}, 金额: {random_amount_quantized} {coin})...", level="INFO")
-                            self.withdrawal_confirm_event.wait() # 线程在此阻塞直到事件被设置
+                    # 最终决定：将 processed_count 和进度更新放在 for 循环体最后，
+                    # 并在每个 continue 之前复制这个更新逻辑。这不理想。
+                    # 或者，将提币核心逻辑放入一个 try 块，然后在 finally 中更新计数和进度。
 
-                            if not self.user_agreed_to_this_withdrawal:
-                                self.log_message(f"  -> 用户未确认或取消了大额提币，跳过地址 {address_display_index} ({self._mask_addresses_in_text(addr)})", level="WARNING")
-                                processed_count += 1
-                                continue # 跳到下一个地址
+                    # 采用 try/finally 结构来确保计数和进度更新
+                    _perform_this_address_withdrawal = True
+                    if not addr:
+                        self.log_message(f"{log_prefix_for_address}  -> 地址为空，跳过。", level="WARNING")
+                        _perform_this_address_withdrawal = False
+                    
+                    if _perform_this_address_withdrawal:
+                        # --- 1. 生成随机数量并处理精度 ---
+                        try:
+                            random_amount_raw = Decimal(random.uniform(float(min_amount), float(max_amount)))
+                            quantizer = Decimal('1e-' + str(actual_precision))
+                            random_amount_quantized = random_amount_raw.quantize(quantizer, rounding=ROUND_DOWN)
+                            self.log_message(f"{log_prefix_for_address}  -> 计划提币数量 (原始): {random_amount_raw:.18f} {coin}", level="DEBUG")
+                            self.log_message(f"{log_prefix_for_address}  -> 计划提币数量 (量化到 {actual_precision} 位小数): {random_amount_quantized} {coin}", level="DEBUG")
+                            
+                            if random_amount_quantized <= 0:
+                                self.log_message(f"{log_prefix_for_address}  -> 生成的提币数量过小 ({random_amount_quantized})，跳过此地址。", level="WARNING")
+                                _perform_this_address_withdrawal = False # 标记不执行后续提币
+                        except Exception as e_amount:
+                            self.log_message(f"{log_prefix_for_address} 生成或处理提币数量时出错: {e_amount}，跳过此地址", level="ERROR")
+                            _perform_this_address_withdrawal = False # 标记不执行后续提币
+
+                    if _perform_this_address_withdrawal:
+                        # --- 2. 大额提币检查 (应在余额检查之前) ---
+                        if self.enable_warning and usd_price is not None:
+                            try:
+                                usd_value = random_amount_quantized * usd_price
+                                if usd_value >= Decimal(str(self.warning_threshold)):
+                                    self.log_message(f"{log_prefix_for_address} 警告：提币金额 ${usd_value:.2f} 达到或超过阈值 ${self.warning_threshold:.2f}", level="WARNING")
+                                    self.confirm_withdrawal_signal.emit(coin, network, random_amount_quantized, addr, None, True)
+                                    self.withdrawal_confirm_event.clear()
+                                    self.log_message(f"{log_prefix_for_address}  -> 等待用户确认大额提币 (地址: {self._mask_addresses_in_text(addr)}, 金额: {random_amount_quantized} {coin})...", level="INFO")
+                                    self.withdrawal_confirm_event.wait() # 线程在此阻塞直到事件被设置
+
+                                    if not self.user_agreed_to_this_withdrawal:
+                                        self.log_message(f"{log_prefix_for_address}  -> 用户未确认或取消了大额提币，跳过。", level="WARNING")
+                                        _perform_this_address_withdrawal = False
+                                    else:
+                                        self.log_message(f"{log_prefix_for_address}  -> 用户已确认大额提币，继续执行。", level="INFO")
+                            except Exception as e_large_check:
+                                self.log_message(f"{log_prefix_for_address} 大额提币检查计算时出错: {e_large_check}", level="WARNING")
+                        
+                        if _perform_this_address_withdrawal:
+                            # --- 3. 检查余额 (考虑手续费) ---
+                            try:
+                                balance_str = self.current_exchange_api.get_balance(coin)
+                                if balance_str is None:
+                                    self.log_message(f"{log_prefix_for_address} 无法获取 {coin} 余额，跳过。", level="WARNING")
+                                    _perform_this_address_withdrawal = False
+                                else:
+                                    balance_decimal = Decimal(balance_str)
+                                    required_amount = random_amount_quantized + fee_decimal
+                                    if balance_decimal < required_amount:
+                                        self.log_message(f"{log_prefix_for_address} 余额不足 (需要: {required_amount}, 可用: {balance_decimal})，跳过。", level="WARNING")
+                                        _perform_this_address_withdrawal = False
+                                    else:
+                                        self.log_message(f"{log_prefix_for_address}  -> 余额检查通过 (可用: {balance_decimal}, 需要: {required_amount})", level="DEBUG")
+                            except Exception as e_balance:
+                                self.log_message(f"{log_prefix_for_address} 检查余额时出错: {e_balance}，跳过此地址。", level="ERROR")
+                                _perform_this_address_withdrawal = False
+
+                        if _perform_this_address_withdrawal:
+                            # --- 4. 构造API地址参数并执行实际提币API调用 ---
+                            address_for_api = addr
+                            if self.current_exchange_name == 'OKX':
+                                # 检查地址类型
+                                is_evm_address = addr.startswith('0x') and len(addr) == 42
+                                is_sol_address = not is_evm_address and len(addr) >= 32 and len(addr) <= 44
+                                
+                                if is_evm_address:
+                                    # 对于EVM地址，OKX API可能期望纯地址，忽略Excel中的label
+                                    self.log_message(f"{log_prefix_for_address}  -> OKX EVM地址: 使用原始地址 {self._mask_addresses_in_text(addr)} (忽略Excel label: {label})", level="DEBUG")
+                                    address_for_api = addr 
+                                elif is_sol_address and label:
+                                    # 对于SOL地址，如果有label，使用 address:label 格式
+                                    address_for_api = f"{addr}:{label}"
+                                    self.log_message(f"{log_prefix_for_address}  -> OKX SOL地址: 使用地址:label格式: {self._mask_addresses_in_text(address_for_api)}", level="DEBUG")
+                                elif label: # 其他非EVM地址，且Excel中提供了label
+                                    address_for_api = f"{addr}:{label}"
+                                    self.log_message(f"{log_prefix_for_address}  -> OKX 非EVM地址: 使用地址:label格式: {self._mask_addresses_in_text(address_for_api)}", level="DEBUG")
+                                # else: 非EVM地址且无label，address_for_api 保持原始 addr
+                            
+                            success_withdraw = False
+                            message_withdraw = "未知错误"
+                            try:
+                                amount_str_for_api = f"{random_amount_quantized:.{actual_precision}f}"
+                                self.log_message(f"{log_prefix_for_address}  -> 准备调用API提币: {amount_str_for_api} {coin} 到 {self._mask_addresses_in_text(address_for_api)}...", level="INFO")
+                                memo = None
+                                success_withdraw, message_withdraw = self.current_exchange_api.withdraw(
+                                    coin=coin, network=network, address=address_for_api, 
+                                    amount=amount_str_for_api, memo=memo
+                                )
+                            except Exception as e_withdraw_call:
+                                success_withdraw = False
+                                message_withdraw = f"API调用异常: {e_withdraw_call}"
+                                self.log_message(f"{log_prefix_for_address} 提币API调用时发生异常: {e_withdraw_call}", level="ERROR", exc_info=True)
+
+                            # --- 5. 处理提币结果 ---
+                            if success_withdraw:
+                                self.used_addresses.add(addr)
+                                withdraw_id = message_withdraw
+                                self.log_message(f"{log_prefix_for_address} 提币成功: {withdraw_id}", level="SUCCESS")
                             else:
-                                self.log_message(f"  -> 用户已确认大额提币，继续执行对地址 {self._mask_addresses_in_text(addr)} 的提币操作。", level="INFO")
-                    except Exception as e_large_check:
-                         self.log_message(f"大额提币检查计算时出错: {e_large_check}", level="WARNING")
-
-                # --- 3. 检查余额 (考虑手续费) ---
-                try:
-                    balance_str = self.current_exchange_api.get_balance(coin)
-                    if balance_str is None:
-                        self.log_message(f"无法获取 {coin} 余额，跳过地址 {address_display_index}", level="WARNING")
-                        processed_count += 1
-                        continue
-                    
-                    balance_decimal = Decimal(balance_str)
-                    required_amount = random_amount_quantized + fee_decimal
-                    
-                    if balance_decimal < required_amount:
-                        self.log_message(f"余额不足 (需要: {required_amount}, 可用: {balance_decimal})，跳过地址 {address_display_index}", level="WARNING")
-                        processed_count += 1
-                        continue # 跳到下一个地址
-                    else:
-                         self.log_message(f"  -> 余额检查通过 (可用: {balance_decimal}, 需要: {required_amount})", level="DEBUG")
-                except Exception as e_balance:
-                     self.log_message(f"检查余额时出错: {e_balance}，跳过此地址 {address_display_index}", level="ERROR")
-                     processed_count += 1
-                     continue
-
-                # --- 4. 构造API地址参数并执行实际提币API调用 ---
-                address_for_api = addr
-                if self.current_exchange_name == 'OKX':
-                    # 检查地址类型
-                    is_evm_address = addr.startswith('0x') and len(addr) == 42
-                    is_sol_address = not is_evm_address and len(addr) >= 32 and len(addr) <= 44
-                    
-                    if is_evm_address:
-                        # 对于EVM地址，OKX API可能期望纯地址，忽略Excel中的label
-                        self.log_message(f"  -> OKX EVM地址: 使用原始地址 {self._mask_addresses_in_text(addr)} (忽略Excel label: {label})", level="DEBUG")
-                        address_for_api = addr 
-                    elif is_sol_address and label:
-                        # 对于SOL地址，如果有label，使用 address:label 格式
-                        address_for_api = f"{addr}:{label}"
-                        self.log_message(f"  -> OKX SOL地址: 使用地址:label格式: {self._mask_addresses_in_text(address_for_api)}", level="DEBUG")
-                    elif label: # 其他非EVM地址，且Excel中提供了label
-                        address_for_api = f"{addr}:{label}"
-                        self.log_message(f"  -> OKX 非EVM地址: 使用地址:label格式: {self._mask_addresses_in_text(address_for_api)}", level="DEBUG")
-                    # else: 非EVM地址且无label，address_for_api 保持原始 addr
+                                error_msg_withdraw = message_withdraw
+                                self.log_message(f"{log_prefix_for_address} ({address_for_api}) 提币失败: {error_msg_withdraw}", level="ERROR")
                 
-                success = False
-                message = "未知错误"
-                try:
-                    # 格式化提币数量为字符串
-                    amount_str_for_api = f"{random_amount_quantized:.{actual_precision}f}"
-                    self.log_message(f"  -> 准备调用API提币: {amount_str_for_api} {coin} 到 {self._mask_addresses_in_text(address_for_api)}...", level="INFO")
-                    
-                    memo = None # TODO: 如果需要支持memo，从 address_info['label'] 或其他地方获取?
-                    
-                    success, message = self.current_exchange_api.withdraw(
-                        coin=coin, 
-                        network=network, 
-                        address=address_for_api, 
-                        amount=amount_str_for_api, # <--- 传递格式化后的字符串
-                        memo=memo
-                    )
-                except Exception as e_withdraw:
-                    success = False
-                    message = f"API调用异常: {e_withdraw}"
-                    self.log_message(f"提币API调用时发生异常: {e_withdraw}", level="ERROR", exc_info=True)
-
-                # --- 5. 处理提币结果 ---
-                if success:
-                    self.used_addresses.add(addr) # 记录原始地址为已使用
-                    withdraw_id = message # API成功时 message 通常是提币ID
-                    self.log_message(f"地址 {address_display_index} 提币成功: {withdraw_id}", level="SUCCESS")
-                else:
-                    error_msg = message # API失败时 message 通常是错误信息
-                    self.log_message(f"地址 {address_display_index} ({address_for_api}) 提币失败: {error_msg}", level="ERROR")
-                    # 可选：如果提币失败是否重试？或添加到失败列表？暂时只记录日志。
-
+                # --- 统一在每次迭代结束时（但在随机等待之前）更新 processed_count 和进度条 ---
                 processed_count += 1
+                progress_percentage = int((processed_count / current_total_addresses_to_process) * 100) if current_total_addresses_to_process > 0 else 0
+                # 构造更明确的进度文本，直接传递给 update_progress
+                progress_text_for_signal = f"进度: {processed_count}/{current_total_addresses_to_process}"
+                self.progress_update_signal.emit(progress_percentage, progress_text_for_signal)
 
-                # --- 6. 更新进度条 ---
-                progress_percentage = int((processed_count / total_addresses_in_range) * 100)
-                progress_text = f"进度: {progress_percentage}%"
-                self.progress_update_signal.emit(progress_percentage, progress_text)
-
-                # --- 7. 随机等待 (如果不是最后一个地址) ---
-                if i < end_idx:
+                # --- 7. 随机等待 (如果不是最后一个地址，并且仍在运行) ---
+                if self.running and processed_count < current_total_addresses_to_process:
                     wait_time = random.randint(min_interval, max_interval)
-                    self.log_message(f"下一次提币前等待 {wait_time} 秒...", level="DEBUG")
+                    self.log_message(f"下一次提币前等待 {wait_time} 秒... (已处理 {processed_count}/{current_total_addresses_to_process})", level="DEBUG")
                     wait_start = time.time()
                     while time.time() - wait_start < wait_time:
                         if not self.running: 
@@ -2160,7 +2208,7 @@ class WithdrawalHelper(QMainWindow):
         if hasattr(self, 'start_button'): self.start_button.setEnabled(True)
         if hasattr(self, 'stop_button'): self.stop_button.setEnabled(False)
         # 重置进度条和等待条 (虽然线程finally里也做了，这里再做一次确保UI更新)
-        self.update_progress(0)  # Reset progress
+        self.update_progress(0, "等待: 0秒")  # Reset progress
         self.wait_update_signal.emit(0, "等待: 0秒")
 
     def show_donation_dialog(self):
