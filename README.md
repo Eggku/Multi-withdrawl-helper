@@ -46,7 +46,7 @@
     <img src="https://github.com/user-attachments/assets/a83c727b-5a68-4061-8b75-4a8f3e90e5a1" alt="image" width="200"/>
     <img src="https://github.com/user-attachments/assets/18e32401-a4bf-4271-a24a-e11475766860" alt="image" width="300"/>
     <img src="https://github.com/user-attachments/assets/bbc026aa-7d25-4220-ae5d-92f73a07f6ad" alt="image" width="300"/>
-     <img src="https://github.com/user-attachments/assets/d40d5340-0978-45b2-8737-d7eb68dfca92" alt="image" width="300"/>
+     <img src="https://github.com/user-attachments/assets/d40d5340-0978-45b2-8737-d7eb68dfca92" alt="image" width="150"/>
 
 
 ## 💖 支持项目
