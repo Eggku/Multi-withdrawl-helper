@@ -27,7 +27,7 @@ jobs:
         shell: pwsh
 
       - name: 🚀 上传构建产物（MultiWithdrawalHelper.exe）
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: MultiWithdrawalHelper
           path: dist_packages/MultiWithdrawalHelper_v*/MultiWithdrawalHelper.exe
