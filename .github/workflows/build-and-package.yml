@@ -21,14 +21,16 @@ jobs:
         with:
           python-version: "3.12.5"
 
-      - name: 🚀 设置 Windows 终端 UTF-8 编码
-        run: chcp 65001
-        shell: pwsh
-
-      - name: 🚀 强制 Python 使用 UTF-8
+      - name: 🚀 强制设置 Python 终端使用 UTF-8
         run: |
           echo "PYTHONUTF8=1" >> $GITHUB_ENV
           echo "PYTHONIOENCODING=utf-8" >> $GITHUB_ENV
+        shell: pwsh
+
+      - name: 🚀 设置 Windows 终端 UTF-8 编码
+        run: |
+          chcp 65001
+          [System.Console]::OutputEncoding = [System.Text.Encoding]::UTF8
         shell: pwsh
 
       - name: 🚀 强制安装依赖
