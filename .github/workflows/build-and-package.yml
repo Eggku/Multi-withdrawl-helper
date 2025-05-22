@@ -7,7 +7,7 @@ on:
 
 jobs:
   build:
-    runs-on: ubuntu-latest  # You can change to windows-latest if needed for better compatibility
+    runs-on: ubuntu-latest  # Try changing to 'windows-latest' if Windows-specific issues are suspected
 
     steps:
       - name: Checkout code
@@ -20,20 +20,29 @@ jobs:
 
       - name: Install dependencies
         run: |
+          set -x  # Enable debugging to show each command
+          echo "Starting dependency installation..."
           python -m pip install --upgrade pip
           if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
+          echo "Dependencies installed successfully."
 
       - name: Build and Package Application
         run: |
+          set -x  # Enable debugging
+          echo "Starting build process with build.py..."
           python build.py
+          echo "Build process completed."
 
-      - name: Debug Output Directory  # New debugging step
+      - name: Debug Output Directory
         run: |
-          ls -la dist_packages/  # List files in dist_packages/ to verify it exists
-          if [ ! -d "dist_packages/" ]; then echo "Directory dist_packages/ does not exist!"; exit 1; fi
+          set -x
+          echo "Checking for dist_packages/ directory..."
+          ls -la dist_packages/ || echo "dist_packages/ does not exist or is empty!"
+          if [ ! -d "dist_packages/" ]; then echo "Error: Directory dist_packages/ does not exist!"; exit 1; fi
+          echo "Directory check passed."
 
       - name: Upload Artifact
-        uses: actions/upload-artifact@v4  # Updated to v4
+        uses: actions/upload-artifact@v4
         with:
           name: packaged-app
           path: dist_packages/
