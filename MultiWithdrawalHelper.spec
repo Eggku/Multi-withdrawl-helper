@@ -1,17 +1,12 @@
 # -*- mode: python ; coding: utf-8 -*-
 from PyInstaller.utils.hooks import collect_data_files
 
-# datas = [('C:\\Users\\zengz\\Desktop\\Code\\multi-withdrawl\\app.ico', '.'), ('C:\\Users\\zengz\\AppData\\Local\\Programs\\Python\\Python312\\Lib\\site-packages\\candlelite\\SETTINGS.config', 'candlelite')]
-# Use relative paths for project assets where possible
-datas = [('app.ico', '.'), ('twitter.png', '.')] 
-# Add other external dependencies if needed, e.g.:
-# datas += [('path/to/external/dependency.config', 'dependency_dir')]
+datas = [('C:\\Users\\zengz\\Desktop\\Code\\multi-withdrawl\\app.ico', '.'), ('C:\\Users\\zengz\\AppData\\Local\\Programs\\Python\\Python312\\Lib\\site-packages\\candlelite\\SETTINGS.config', 'candlelite')]
 datas += collect_data_files('PyQt6')
 
 
 a = Analysis(
-    # Use relative path for entry script
-    ['main_qt.py'], 
+    ['C:\\Users\\zengz\\Desktop\\Code\\multi-withdrawl\\main_qt.py'],
     pathex=[],
     binaries=[],
     datas=datas,

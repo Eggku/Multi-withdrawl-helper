@@ -472,7 +472,9 @@ class WithdrawalHelper(QMainWindow):
         if logger.hasHandlers():
             logger.handlers.clear()
 
-        log_file_path = os.path.join(self.app_data_dir, 'app.log')
+        # log_file_path = os.path.join(self.app_data_dir, 'app.log') # Original path
+        log_file_path = os.path.join(os.getcwd(), 'app.log') # New path: current working directory
+        # self.logger.info(f"日志文件路径已临时更改为: {log_file_path}") # This line caused an AttributeError
         
         fh = RotatingFileHandler(log_file_path, maxBytes=5*1024*1024, backupCount=3, encoding='utf-8')
         fh.setLevel(logging.DEBUG)
@@ -1185,11 +1187,11 @@ class WithdrawalHelper(QMainWindow):
         default_cfg.set('OKX', 'passphrase', '')
         
         # Kept for compatibility if old settings exist, but new apps might not need this section directly in main config
-        default_cfg.add_section('WITHDRAWAL_PARAMS') # Renamed from WITHDRAWAL to avoid conflict if old GENERAL had it
-        default_cfg.set('WITHDRAWAL_PARAMS', 'min_interval', '60')
-        default_cfg.set('WITHDRAWAL_PARAMS', 'max_interval', '600')
-        default_cfg.set('WITHDRAWAL_PARAMS', 'warning_threshold', '1000')
-        default_cfg.set('WITHDRAWAL_PARAMS', 'enable_warning', 'True')
+        default_cfg.add_section('WITHDRAWAL') # Renamed from WITHDRAWAL_PARAMS to WITHDRAWAL
+        default_cfg.set('WITHDRAWAL', 'min_interval', '60')
+        default_cfg.set('WITHDRAWAL', 'max_interval', '600')
+        default_cfg.set('WITHDRAWAL', 'warning_threshold', '1000')
+        default_cfg.set('WITHDRAWAL', 'enable_warning', 'True')
         try:
             with open(self.config_path, 'w', encoding='utf-8') as f:
                 default_cfg.write(f)
@@ -1203,7 +1205,7 @@ class WithdrawalHelper(QMainWindow):
             self.logger.warning("配置文件中缺少GENERAL部分，部分常规设置可能不会加载。")
             return
         self.last_address_file_path = self.config.get('GENERAL', 'last_address_file', fallback='')
-        wp_section = 'WITHDRAWAL_PARAMS'
+        wp_section = 'WITHDRAWAL' # Changed from 'WITHDRAWAL_PARAMS'
         if self.config.has_section(wp_section):
             self.min_interval = self.config.getint(wp_section, 'min_interval', fallback=60)
             self.max_interval = self.config.getint(wp_section, 'max_interval', fallback=600)
@@ -1216,6 +1218,7 @@ class WithdrawalHelper(QMainWindow):
             self.warning_threshold = 1000.0
             self.enable_warning = True
         self.logger.debug("常规应用配置已加载。")
+        self.logger.info(f"加载后的提现间隔: min={self.min_interval}, max={self.max_interval}") # <--- 新增日志
 
     def _handle_exchange_change_from_toolbar(self, exchange_name: str):
         """处理工具栏中交易所选择的变化."""
@@ -1332,6 +1335,22 @@ class WithdrawalHelper(QMainWindow):
                 self.status_label.setText(f"{exchange_name} - 连接失败: {message[:100]}")
             self.current_exchange_api = None
 
+            # 检查是否是时间戳错误 (Binance 或 OKX)
+            timestamp_hint_message = f"提示: {exchange_name} API操作失败，检测到时间戳错误。您的计算机时间可能与服务器时间不同步。请检查并同步您的系统时间。"
+            connection_failed_timestamp_hint = f"提示: {exchange_name} API连接失败，可能是由于您的计算机时间与服务器时间不同步。请检查并同步您的系统时间后再试。"
+
+            if api_instance is None: # 通常意味着连接的初始阶段就失败了
+                l_message = message.lower()
+                # OKX的典型时间戳错误信息可能包含 "timestamp", "expired", 或特定错误码如50100, 50101
+                # Binance的典型时间戳错误信息包含 "timestamp", "ahead of server", "behind server"
+                if ("timestamp" in l_message and ("expired" in l_message or "ahead of server" in l_message or "behind server" in l_message or "different" in l_message or " outside current" in l_message)) or \
+                   (exchange_name == "OKX" and any(code in message for code in ["50100", "50101", "50011"])) : # 50011 for OKX invalid signature often due to time
+                    self.log_message(connection_failed_timestamp_hint, level="WARNING")
+            elif hasattr(api_instance, 'timestamp_error_detected') and getattr(api_instance, 'timestamp_error_detected', False):
+                 self.log_message(timestamp_hint_message, level="WARNING")
+                 if hasattr(api_instance, 'timestamp_error_detected'): # 重置标志，避免重复提示
+                     setattr(api_instance, 'timestamp_error_detected', False) # Use setattr for safety
+
     def _clear_exchange_specific_ui_elements(self):
         """清除UI上依赖于特定交易所API数据的内容 (币种, 网络, 余额等)."""
         self.logger.debug("正在清除交易所特定的UI元素...")
@@ -1379,6 +1398,13 @@ class WithdrawalHelper(QMainWindow):
                 return
                 
             all_tradable_coins = self.current_exchange_api.get_all_tradable_coins()
+            
+            # Ensure all_tradable_coins is a list to prevent errors during iteration/filtering
+            if not isinstance(all_tradable_coins, list):
+                self.log_message(f"{self.current_exchange_name} API 返回的币种数据非列表格式 (实际类型: {type(all_tradable_coins).__name__})。", level="ERROR")
+                all_tradable_coins = [] # Default to empty list to prevent further errors
+
+            original_coin_count = len(all_tradable_coins)
             # 筛选币种列表
             filtered_coins = [coin for coin in all_tradable_coins if coin in self.ALLOWED_COINS]
             
@@ -1389,23 +1415,30 @@ class WithdrawalHelper(QMainWindow):
             if self.supported_coins_for_current_exchange:
                 self.coin_combo.addItems(self.supported_coins_for_current_exchange)
                 self.coin_combo.setEnabled(True)
-                self.log_message(f"为 {self.current_exchange_name} 加载并筛选了 {len(self.supported_coins_for_current_exchange)} 个指定币种: {', '.join(self.supported_coins_for_current_exchange)}。", level="INFO")
+                self.log_message(f"为 {self.current_exchange_name} 加载了 {original_coin_count} 个币种，筛选后得到 {len(self.supported_coins_for_current_exchange)} 个支持的币种: {', '.join(self.supported_coins_for_current_exchange)}。", level="INFO")
                 if self.coin_combo.count() > 0:
-                    # Try to restore last selected coin for this exchange if applicable, or default to first
-                    # This is a more advanced feature, for now, just select the first one.
                     self.coin_combo.setCurrentIndex(0) 
             else:
-                self.log_message(f"{self.current_exchange_name} 未返回可交易币种。", level="WARNING")
+                if original_coin_count == 0:
+                    self.log_message(f"{self.current_exchange_name} API 未返回任何可交易币种。这可能由API错误或无可用数据导致。请检查API侧的详细日志。", level="WARNING")
+                    # 检查是否是时间戳错误导致未返回币种 (Binance 或 OKX)
+                    if self.current_exchange_api and \
+                       hasattr(self.current_exchange_api, 'timestamp_error_detected') and \
+                       self.current_exchange_api.timestamp_error_detected:
+                        self.log_message(f"提示: {self.current_exchange_name} 未能获取币种列表，这可能是由于您的计算机时间与服务器时间不同步。请检查并同步您的系统时间。", level="WARNING")
+                        self.current_exchange_api.timestamp_error_detected = False # 重置标志
+                else: 
+                    self.log_message(f"{self.current_exchange_name} API 返回了 {original_coin_count} 个币种，但经过筛选后无任何币种在允许列表 ALLOWED_COINS 中。", level="WARNING")
+                
                 self.coin_combo.setEnabled(False)
-                self._clear_networks_balance_fee_price_ui() # Clear dependent UI if no coins
             self.coin_combo.blockSignals(False)
             
             # Manually trigger the handler for the newly set current coin, 
             # as setCurrentIndex(0) might not fire currentTextChanged if it was already 0 (though unlikely after clear).
             if self.coin_combo.count() > 0:
                  self.update_networks_on_coin_change(self.coin_combo.currentText())
-            elif not self.supported_coins_for_current_exchange: # If list is empty
-                 self._clear_networks_balance_fee_price_ui()
+            # elif not self.supported_coins_for_current_exchange: # This redundant call is removed
+            #      self._clear_networks_balance_fee_price_ui()
             
         except Exception as e:
             self.log_message(f"获取 {self.current_exchange_name} 币种列表失败: {e}", level="ERROR", exc_info=True)
@@ -1424,6 +1457,7 @@ class WithdrawalHelper(QMainWindow):
 
     def config_updated_and_reconnect(self, resetting=False):
         """当设置对话框保存后调用此方法, 重新加载配置并重新初始化/连接API."""
+        self.logger.info("config_updated_and_reconnect 方法被调用。重置标志: {resetting}") # <-- 新增日志
         self.log_message("配置已更新或重置，正在重新应用...", level="INFO")
         
         # --- 开始改进的线程清理 ---
@@ -1494,6 +1528,7 @@ class WithdrawalHelper(QMainWindow):
             if not (self.current_exchange_api and hasattr(self.current_exchange_api, 'client') and self.current_exchange_api.client is not None):
                  self._clear_exchange_specific_ui_elements()
                  self.update_api_status_indicator(False)
+        self.logger.info("config_updated_and_reconnect 方法执行完毕。") # <-- 新增日志
 
     def show_history(self):
         """处理工具栏 "历史记录" 按钮点击事件. \n           获取历史记录并通过富文本格式在可滚动的自定义对话框中显示。
@@ -1585,6 +1620,7 @@ class WithdrawalHelper(QMainWindow):
     def start_withdrawal(self):
         """处理工具栏 "开始提币" 按钮点击事件.\n           获取参数, 验证输入, 并启动后台提币线程。
         """
+        self.logger.info(f"start_withdrawal 调用时提现间隔: min={self.min_interval}, max={self.max_interval}") # <--- 新增日志
         if self.running:
             self.log_message("提币流程已经在运行中。", level="INFO")
             QMessageBox.information(self, "提示", "提币流程已经在运行中。")
@@ -1658,11 +1694,26 @@ class WithdrawalHelper(QMainWindow):
         # 设置总行数
         self.total_rows = end_index - start_index + 1
         
-        # 5. 启动后台线程
         # 将地址序号调整为0-based index给线程使用
         thread_start_index = start_index - 1 
         thread_end_index = end_index - 1 # 包含结束索引
         
+        # --- 新增：提取并打乱待处理的地址列表 ---
+        if thread_start_index < 0 or thread_end_index >= len(self.current_addresses) or thread_start_index > thread_end_index:
+            self.log_message(f"内部错误：地址索引范围 [{thread_start_index}-{thread_end_index}] 无效。", level="CRITICAL")
+            self.running = False
+            self.start_button.setEnabled(True)
+            self.stop_button.setEnabled(False)
+            return
+
+        # 提取选定范围的地址
+        selected_addresses_to_process = self.current_addresses[thread_start_index : thread_end_index + 1]
+        
+        # 随机打乱这些地址
+        random.shuffle(selected_addresses_to_process)
+        self.log_message(f"已提取并随机打乱 {len(selected_addresses_to_process)} 个地址进行处理。", level="INFO")
+        # --- 结束新增 ---
+
         # 创建并启动线程
         # 注意：传递 Decimal 对象到线程是安全的
         self.withdrawal_thread = threading.Thread(
@@ -1672,8 +1723,7 @@ class WithdrawalHelper(QMainWindow):
                 selected_network,
                 min_amount, 
                 max_amount,
-                thread_start_index, 
-                thread_end_index,
+                selected_addresses_to_process, # <--- 新增参数
                 self.min_interval, # 从配置加载
                 self.max_interval  # 从配置加载
             ),
@@ -1930,10 +1980,11 @@ class WithdrawalHelper(QMainWindow):
         self.logger.info(f"_handle_withdrawal_confirmation: user_confirmed={user_confirmed}, event set.")
 
     def _process_withdrawals(self, coin, network, min_amount, max_amount, 
-                             start_idx, end_idx, min_interval, max_interval):
+                             target_addresses: list, # <--- 新增参数
+                             min_interval, max_interval):
         """后台提币处理线程 (处理带标签地址)."""
-        self.log_message(f"提币线程开始: 处理地址索引 {start_idx} 到 {end_idx} ({coin} on {network})", level="INFO")
-        total_addresses_in_range = end_idx - start_idx + 1
+        self.log_message(f"提币线程开始: 将处理 {len(target_addresses)} 个随机顺序的地址 ({coin} on {network})", level="INFO")
+        total_addresses_in_range = len(target_addresses) # 新计算
         processed_count = 0
         
         # --- 获取手续费和精度 --- 
@@ -1986,23 +2037,24 @@ class WithdrawalHelper(QMainWindow):
 
         # --- 开始循环处理地址 ---
         try:
-            for i in range(start_idx, end_idx + 1):
+            for i, current_address_info in enumerate(target_addresses): # 新循环，使用 enumerate
                 if not self.running: 
                     self.log_message("提币线程收到停止信号，正在退出...", level="INFO")
                     break
                 
                 # 获取当前地址信息 (字典)
-                current_address_info = self.current_addresses[i]
                 addr = current_address_info.get('address')
                 label = current_address_info.get('label') # 可能为 None
                 
                 if not addr: # 如果地址为空，则跳过
-                    self.log_message(f"地址索引 {i+1} 的地址为空，跳过。", level="WARNING")
+                    self.log_message(f"当前处理的随机地址列表中第 {i+1} 个条目地址为空，跳过。", level="WARNING")
                     processed_count += 1
                     continue
                 
-                address_display_index = i + 1
-                self.log_message(f"[{address_display_index}/{total_addresses_in_range}] 处理地址: {label + ' (' + self._mask_addresses_in_text(addr) + ')' if label else self._mask_addresses_in_text(addr)}...", level="DEBUG")
+                # 使用 enumerate 返回的 i (0-based) 作为当前处理的序号
+                address_display_index_in_shuffled_list = i + 1 
+                
+                self.log_message(f"[{address_display_index_in_shuffled_list}/{total_addresses_in_range} (随机顺序)] 处理地址: {label + ' (' + self._mask_addresses_in_text(addr) + ')' if label else self._mask_addresses_in_text(addr)}...", level="DEBUG")
                 
                 # --- 1. 生成随机数量并处理精度 ---
                 try:
@@ -2018,7 +2070,7 @@ class WithdrawalHelper(QMainWindow):
                          processed_count += 1 # 算作处理过
                          continue
                 except Exception as e_amount:
-                    self.log_message(f"生成或处理提币数量时出错: {e_amount}，跳过此地址 {address_display_index}", level="ERROR")
+                    self.log_message(f"生成或处理提币数量时出错: {e_amount}，跳过此地址 (随机列表中的第 {address_display_index_in_shuffled_list} 个)", level="ERROR")
                     processed_count += 1
                     continue
 
@@ -2027,7 +2079,7 @@ class WithdrawalHelper(QMainWindow):
                     try:
                         usd_value = random_amount_quantized * usd_price
                         if usd_value >= Decimal(str(self.warning_threshold)):
-                            self.log_message(f"警告：地址 {address_display_index} 的提币金额 ${usd_value:.2f} 达到或超过阈值 ${self.warning_threshold:.2f}", level="WARNING")
+                            self.log_message(f"警告：地址 {address_display_index_in_shuffled_list} 的提币金额 ${usd_value:.2f} 达到或超过阈值 ${self.warning_threshold:.2f}", level="WARNING")
                             
                             # 发出信号请求用户确认
                             self.confirm_withdrawal_signal.emit(coin, network, random_amount_quantized, addr, None, True)
@@ -2038,7 +2090,7 @@ class WithdrawalHelper(QMainWindow):
                             self.withdrawal_confirm_event.wait() # 线程在此阻塞直到事件被设置
 
                             if not self.user_agreed_to_this_withdrawal:
-                                self.log_message(f"  -> 用户未确认或取消了大额提币，跳过地址 {address_display_index} ({self._mask_addresses_in_text(addr)})", level="WARNING")
+                                self.log_message(f"  -> 用户未确认或取消了大额提币，跳过地址 {self._mask_addresses_in_text(addr)} (随机列表中的第 {address_display_index_in_shuffled_list} 个)", level="WARNING")
                                 processed_count += 1
                                 continue # 跳到下一个地址
                             else:
@@ -2050,7 +2102,7 @@ class WithdrawalHelper(QMainWindow):
                 try:
                     balance_str = self.current_exchange_api.get_balance(coin)
                     if balance_str is None:
-                        self.log_message(f"无法获取 {coin} 余额，跳过地址 {address_display_index}", level="WARNING")
+                        self.log_message(f"无法获取 {coin} 余额，跳过地址 {self._mask_addresses_in_text(addr)} (随机列表中的第 {address_display_index_in_shuffled_list} 个)", level="WARNING")
                         processed_count += 1
                         continue
                     
@@ -2058,13 +2110,13 @@ class WithdrawalHelper(QMainWindow):
                     required_amount = random_amount_quantized + fee_decimal
                     
                     if balance_decimal < required_amount:
-                        self.log_message(f"余额不足 (需要: {required_amount}, 可用: {balance_decimal})，跳过地址 {address_display_index}", level="WARNING")
+                        self.log_message(f"余额不足 (需要: {required_amount}, 可用: {balance_decimal})，跳过地址 {self._mask_addresses_in_text(addr)} (随机列表中的第 {address_display_index_in_shuffled_list} 个)", level="WARNING")
                         processed_count += 1
                         continue # 跳到下一个地址
                     else:
                          self.log_message(f"  -> 余额检查通过 (可用: {balance_decimal}, 需要: {required_amount})", level="DEBUG")
                 except Exception as e_balance:
-                     self.log_message(f"检查余额时出错: {e_balance}，跳过此地址 {address_display_index}", level="ERROR")
+                     self.log_message(f"检查余额时出错: {e_balance}，跳过此地址 {self._mask_addresses_in_text(addr)} (随机列表中的第 {address_display_index_in_shuffled_list} 个)", level="ERROR")
                      processed_count += 1
                      continue
 
@@ -2113,10 +2165,10 @@ class WithdrawalHelper(QMainWindow):
                 if success:
                     self.used_addresses.add(addr) # 记录原始地址为已使用
                     withdraw_id = message # API成功时 message 通常是提币ID
-                    self.log_message(f"地址 {address_display_index} 提币成功: {withdraw_id}", level="SUCCESS")
+                    self.log_message(f"地址 {self._mask_addresses_in_text(addr)} (随机列表中的第 {address_display_index_in_shuffled_list} 个) 提币成功: {withdraw_id}", level="SUCCESS")
                 else:
                     error_msg = message # API失败时 message 通常是错误信息
-                    self.log_message(f"地址 {address_display_index} ({address_for_api}) 提币失败: {error_msg}", level="ERROR")
+                    self.log_message(f"地址 {self._mask_addresses_in_text(address_for_api)} (随机列表中的第 {address_display_index_in_shuffled_list} 个) 提币失败: {error_msg}", level="ERROR")
                     # 可选：如果提币失败是否重试？或添加到失败列表？暂时只记录日志。
 
                 processed_count += 1
@@ -2127,7 +2179,7 @@ class WithdrawalHelper(QMainWindow):
                 self.progress_update_signal.emit(progress_percentage, progress_text)
 
                 # --- 7. 随机等待 (如果不是最后一个地址) ---
-                if i < end_idx:
+                if address_display_index_in_shuffled_list < total_addresses_in_range: # 新的判断条件
                     wait_time = random.randint(min_interval, max_interval)
                     self.log_message(f"下一次提币前等待 {wait_time} 秒...", level="DEBUG")
                     wait_start = time.time()
