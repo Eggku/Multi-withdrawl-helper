@@ -46,6 +46,8 @@
     <img src="https://github.com/user-attachments/assets/a83c727b-5a68-4061-8b75-4a8f3e90e5a1" alt="image" width="200"/>
     <img src="https://github.com/user-attachments/assets/18e32401-a4bf-4271-a24a-e11475766860" alt="image" width="300"/>
     <img src="https://github.com/user-attachments/assets/bbc026aa-7d25-4220-ae5d-92f73a07f6ad" alt="image" width="300"/>
+     <img src="https://github.com/user-attachments/assets/d40d5340-0978-45b2-8737-d7eb68dfca92" alt="image" width="150"/>
+
 
 ## 💖 支持项目
 如果您觉得这个工具对您有帮助，可以请我喝杯蜜雪冰城，增加更多功能和分享更多小工具：
@@ -128,7 +130,7 @@
 - 建议先使用小额测试提币功能
 - 提币前请仔细核对地址和金额
 - 大额提币需要二次确认
-- 请确保网络稳定，**提币时的ip需与交易所设置的ip白名单（建议设置）一致**，避免提币失败
+- 请确保网络稳定，**提币时的ip需与交易所设置的ip白名单（建议设置）一致,OKX白名单地址必须为免验证地址**，避免提币失败
 - OKX部分币种（如SOL、SUI）需使用"地址:标签"格式，请提前配置
 
 ## ❇️ 更新日志

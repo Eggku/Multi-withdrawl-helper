@@ -40,8 +40,8 @@ class SettingsDialog(QDialog):
             self.config['BINANCE'] = {'api_key': '', 'api_secret': ''}
         if 'OKX' not in self.config:
             self.config['OKX'] = {'api_key': '', 'api_secret': '', 'passphrase': ''}
-        if 'WITHDRAWAL' not in self.config:
-            self.config['WITHDRAWAL'] = {
+        if 'WITHDRAWAL_PARAMS' not in self.config:
+            self.config['WITHDRAWAL_PARAMS'] = {
                 'min_interval': '60',
                 'max_interval': '600',
                 'warning_threshold': '1000',
@@ -207,14 +207,14 @@ class SettingsDialog(QDialog):
         self.min_interval_spinbox = QSpinBox() # 重命名变量
         self.min_interval_spinbox.setRange(10, 3600)
         self.min_interval_spinbox.setSingleStep(10)
-        self.min_interval_spinbox.setValue(int(self.config['WITHDRAWAL'].get('min_interval', '60')))
+        self.min_interval_spinbox.setValue(int(self.config['WITHDRAWAL_PARAMS'].get('min_interval', '60')))
         interval_group_layout.addWidget(self.min_interval_spinbox, 0, 1)
 
         interval_group_layout.addWidget(QLabel("最大间隔(秒):"), 1, 0)
         self.max_interval_spinbox = QSpinBox() # 重命名变量
         self.max_interval_spinbox.setRange(30, 7200)
         self.max_interval_spinbox.setSingleStep(30)
-        self.max_interval_spinbox.setValue(int(self.config['WITHDRAWAL'].get('max_interval', '600')))
+        self.max_interval_spinbox.setValue(int(self.config['WITHDRAWAL_PARAMS'].get('max_interval', '600')))
         interval_group_layout.addWidget(self.max_interval_spinbox, 1, 1)
 
         interval_note = QLabel("提示: 每次提币操作后，程序将在此时间范围内随机等待。")
@@ -234,11 +234,11 @@ class SettingsDialog(QDialog):
         self.warning_threshold_spinbox.setSingleStep(50.0)    # 步长调整
         self.warning_threshold_spinbox.setPrefix("$ ")
         self.warning_threshold_spinbox.setDecimals(2) # 显示两位小数
-        self.warning_threshold_spinbox.setValue(float(self.config['WITHDRAWAL'].get('warning_threshold', '1000')))
+        self.warning_threshold_spinbox.setValue(float(self.config['WITHDRAWAL_PARAMS'].get('warning_threshold', '1000')))
         threshold_group_layout.addWidget(self.warning_threshold_spinbox, 0, 1)
 
         self.enable_threshold_checkbox = QCheckBox("启用大额提币预警") # 重命名变量
-        is_enabled = self.config['WITHDRAWAL'].get('enable_warning', 'True') == 'True'
+        is_enabled = self.config['WITHDRAWAL_PARAMS'].get('enable_warning', 'True') == 'True'
         self.enable_threshold_checkbox.setChecked(is_enabled)
         threshold_group_layout.addWidget(self.enable_threshold_checkbox, 1, 0, 1, 2)
 
@@ -289,12 +289,12 @@ class SettingsDialog(QDialog):
 
 
             # --- 保存提币设置 ---
-            if 'WITHDRAWAL' not in self.config: # 确保section存在
-                self.config.add_section('WITHDRAWAL')
-            self.config['WITHDRAWAL']['min_interval'] = str(min_interval)
-            self.config['WITHDRAWAL']['max_interval'] = str(max_interval)
-            self.config['WITHDRAWAL']['warning_threshold'] = str(self.warning_threshold_spinbox.value())
-            self.config['WITHDRAWAL']['enable_warning'] = str(self.enable_threshold_checkbox.isChecked())
+            if 'WITHDRAWAL_PARAMS' not in self.config: # 确保section存在
+                self.config.add_section('WITHDRAWAL_PARAMS')
+            self.config['WITHDRAWAL_PARAMS']['min_interval'] = str(min_interval)
+            self.config['WITHDRAWAL_PARAMS']['max_interval'] = str(max_interval)
+            self.config['WITHDRAWAL_PARAMS']['warning_threshold'] = str(self.warning_threshold_spinbox.value())
+            self.config['WITHDRAWAL_PARAMS']['enable_warning'] = str(self.enable_threshold_checkbox.isChecked())
             # last_exchange 的保存应该在主窗口处理，这里不改
 
             # 保存到文件
@@ -357,11 +357,11 @@ class SettingsDialog(QDialog):
                 self.warning_threshold_spinbox.setValue(1000.00)
                 self.enable_threshold_checkbox.setChecked(True)
 
-                self.config['WITHDRAWAL']['min_interval'] = '60'
-                self.config['WITHDRAWAL']['max_interval'] = '600'
-                self.config['WITHDRAWAL']['warning_threshold'] = '1000.0'
-                self.config['WITHDRAWAL']['enable_warning'] = 'True'
-                self.config['WITHDRAWAL']['last_exchange'] = 'BINANCE'
+                self.config['WITHDRAWAL_PARAMS']['min_interval'] = '60'
+                self.config['WITHDRAWAL_PARAMS']['max_interval'] = '600'
+                self.config['WITHDRAWAL_PARAMS']['warning_threshold'] = '1000.0'
+                self.config['WITHDRAWAL_PARAMS']['enable_warning'] = 'True'
+                self.config['WITHDRAWAL_PARAMS']['last_exchange'] = 'BINANCE'
 
 
                 # 保存清空后的配置
