@@ -301,19 +301,22 @@ class SettingsDialog(QDialog):
             with open(self.config_path, 'w', encoding='utf-8') as f:
                 self.config.write(f)
 
-            QMessageBox.information(self, "保存成功", "设置已成功保存！")
+            self.logger.info(f"设置已成功写入配置文件: {self.config_path}")
 
-            # 信号通知主窗口重新加载配置并可能重新连接API
             if self.parent_window and hasattr(self.parent_window, 'config_updated_and_reconnect'):
-                 self.parent_window.config_updated_and_reconnect() # 调用新的方法来处理重连逻辑
-            elif self.parent_window and hasattr(self.parent_window, 'load_config'): # 兼容旧的
-                 self.parent_window.load_config()
-
+                self.logger.info("准备调用父窗口的 config_updated_and_reconnect 方法...")
+                self.parent_window.config_updated_and_reconnect()
+                self.logger.info("父窗口的 config_updated_and_reconnect 方法已调用。")
+            else:
+                self.logger.warning("父窗口或 config_updated_and_reconnect 方法未找到，配置可能未立即生效。")
 
             self.accept()
+            QMessageBox.information(self, "设置已保存", "您的设置已成功保存。API相关更改将在重新连接后生效。")
 
         except Exception as e:
-            QMessageBox.critical(self, "保存失败", f"保存设置时出错：{str(e)}")
+            self.logger.error(f"保存设置到配置文件 {self.config_path} 时发生错误: {e}", exc_info=True)
+            QMessageBox.critical(self, "保存失败", f"无法保存设置: {e}")
+            # 不应在此处调用 reject()，以便用户可以看到错误并可能重试或取消
 
     def reset_all_settings(self):
         """恢复默认设置，清除所有用户数据"""

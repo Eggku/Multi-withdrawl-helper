@@ -18,6 +18,7 @@ class BinanceAPI(BaseExchangeAPI):
         self.api_key = None
         self.api_secret = None
         self.client = None # Will be initialized in connect()
+        self.timestamp_error_detected = False # 新增标志位
 
     def get_server_time_offset(self) -> int:
         """
@@ -44,6 +45,7 @@ class BinanceAPI(BaseExchangeAPI):
     def connect(self) -> tuple[bool, str]:
         self.api_key = self.config.get('BINANCE', 'api_key', fallback=None)
         self.api_secret = self.config.get('BINANCE', 'api_secret', fallback=None)
+        self.timestamp_error_detected = False # 重置标志位
 
         if not self.api_key or not self.api_secret:
             self.logger.error("币安 API Key 或 Secret 未在配置文件中设置。")
@@ -56,21 +58,18 @@ class BinanceAPI(BaseExchangeAPI):
             
             # 获取并设置时间偏移
             self.time_offset = self.get_server_time_offset() 
-            # 注意：BaseExchangeAPI 的 get_timestamp() 使用 self.time_offset 时是 local_ts - offset.
-            # 如果 get_server_time_offset() 返回 local - server, 那么 get_timestamp() 应该是 local - (local - server) = server.
-            # 如果 get_server_time_offset() 返回 server - local, 那么 get_timestamp() 应该是 local - (server - local) = 2*local - server (不正确).
-            # 所以，get_server_time_offset 应该返回 server_time_ms - local_time_ms 才能使 get_timestamp() 为：
-            # local - (server - local) = 2*local - server (仍然不正确)
-            # 我们需要 get_timestamp() 返回的是近似的服务器时间。
-            # get_timestamp() = int(time.time() * 1000) - self.time_offset
-            # 如果 self.time_offset = local_ts_ms - server_ts_ms (如我们新实现的 get_server_time_offset)
-            # 那么 get_timestamp() = local_ts_ms - (local_ts_ms - server_ts_ms) = server_ts_ms. 这是正确的。
             self.logger.info(f"成功连接到币安。计算出的时间偏移已设置为: {self.time_offset} ms (本地 - 服务器)")
-            
+            # 连接成功，确保时间戳错误标志是False (尽管前面已重置，双重保险)
+            self.timestamp_error_detected = False 
             return True, "连接成功"
         except BinanceAPIException as e:
             self.logger.error(f"连接币安 API 失败: {e}")
-            return False, f"API 连接失败: {e.message}"
+            err_msg = e.message.lower()
+            if e.status_code == 400 and ("timestamp" in err_msg or "ahead of server" in err_msg or "behind server" in err_msg):
+                self.timestamp_error_detected = True
+                self.logger.error("检测到币安API时间戳错误。请检查系统时间与币安服务器时间是否同步。")
+                return False, f"API 连接失败: {e.message} (错误码: {e.status_code} - 时间戳可能不同步，请检查系统时间)"
+            return False, f"API 连接失败: {e.message} (错误码: {e.status_code})"
         except Exception as e:
             self.logger.error(f"连接币安时发生未知错误: {e}", exc_info=True)
             return False, f"未知错误: {e}"
@@ -86,13 +85,41 @@ class BinanceAPI(BaseExchangeAPI):
         if not self.client:
             self.logger.warning("币安客户端未初始化。")
             return []
+        # 在尝试API调用前，不应该重置timestamp_error_detected，因为它可能由connect()设置
+        # self.timestamp_error_detected = False 
         try:
+            self.logger.debug("调用 self.client.get_all_coins_info() 获取币安所有币种信息...")
             all_coins_info = self.client.get_all_coins_info()
+            
+            if not isinstance(all_coins_info, list):
+                self.logger.error(f"self.client.get_all_coins_info() 返回的不是列表，而是: {type(all_coins_info)}。内容: {str(all_coins_info)[:200]}...") # 记录类型和部分内容
+                return []
+
+            self.logger.info(f"self.client.get_all_coins_info() 返回了 {len(all_coins_info)} 条币种原始数据。")
+            if all_coins_info: # 如果列表不为空
+                self.logger.debug(f"币种原始数据示例 (前1条): {str(all_coins_info[0])[:500]}") # 记录第一条数据的部分内容
+
             # Filter for coins that are tradable or have networks, indicating they can be withdrawn
-            tradable_coins = [coin['coin'] for coin in all_coins_info if coin.get('networkList') and any(nw.get('withdrawEnable') for nw in coin['networkList'])]
+            tradable_coins = []
+            if all_coins_info: # 确保 all_coins_info 是列表且非空才进行迭代
+                for coin in all_coins_info:
+                    if isinstance(coin, dict) and coin.get('networkList') and isinstance(coin.get('networkList'), list):
+                        if any(isinstance(nw, dict) and nw.get('withdrawEnable') for nw in coin['networkList']):
+                            if 'coin' in coin: # 确保 'coin' 键存在
+                                tradable_coins.append(coin['coin'])
+                            else:
+                                self.logger.warning(f"币种条目中缺少 'coin' 键: {str(coin)[:200]}")
+                    else:
+                        self.logger.warning(f"发现格式不正确的币种条目或networkList: {str(coin)[:200]}")
+
+            self.logger.info(f"经过过滤后，得到 {len(tradable_coins)} 个可交易/可提币的币种。")
             return sorted(list(set(tradable_coins))) # Unique and sorted
         except BinanceAPIException as e:
-            self.logger.error(f"获取币安所有币种信息失败: {e}")
+            self.logger.error(f"获取币安所有币种信息失败 (BinanceAPIException): {e.status_code} - {e.message}") # 记录更详细的API错误信息
+            err_msg = e.message.lower()
+            if e.status_code == 400 and ("timestamp" in err_msg or "ahead of server" in err_msg or "behind server" in err_msg):
+                self.timestamp_error_detected = True
+                self.logger.error("检测到币安API时间戳错误 (在获取币种信息时)。请检查系统时间与币安服务器时间是否同步。")
             return []
         except Exception as e:
             self.logger.error(f"获取币安币种信息时发生未知错误: {e}", exc_info=True)

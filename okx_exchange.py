@@ -22,6 +22,7 @@ class OKXAPI(BaseExchangeAPI):
         self.api_secret = ""
         self.passphrase = ""
         self.simulated = False # 0 for real trading, 1 for demo trading
+        self.timestamp_error_detected = False # 新增标志位
         
         # OKX SDK clients will be initialized in connect()
         self.accountAPI = None
@@ -35,6 +36,7 @@ class OKXAPI(BaseExchangeAPI):
         self.passphrase = self.config.get('OKX', 'passphrase', fallback='')
         simulated_str = self.config.get('GENERAL', 'okx_simulated', fallback='False')
         self.simulated = True if simulated_str.lower() == 'true' else False
+        self.timestamp_error_detected = False # 重置标志位
         
         flag = "1" if self.simulated else "0" # 0:real trading; 1:demo trading
 
@@ -55,14 +57,34 @@ class OKXAPI(BaseExchangeAPI):
                 # 计算并存储时间偏移，确保 get_server_time_offset 已正确实现
                 self.time_offset = self.get_server_time_offset() 
                 self.logger.info(f"OKX 服务器时间偏移已计算并设置: {self.time_offset} ms (本地 - 服务器)")
+                self.timestamp_error_detected = False # 确保连接成功时重置
                 return True, "连接成功"
             else:
                 error_msg = test_call.get('msg', '连接测试失败，未知响应。')
-                self.logger.error(f"连接 OKX 失败: {error_msg} (Code: {test_call.get('code')})")
-                return False, f"连接测试失败: {error_msg}"
+                error_code = test_call.get('code')
+                self.logger.error(f"连接 OKX 失败: {error_msg} (Code: {error_code})")
+                # 检查时间戳相关错误
+                l_error_msg = error_msg.lower()
+                # OKX 错误码 50100: "Request time is earlier than server time or later than server time (request time needs to be within plus or minus 30s compared to server time)"
+                # OKX 错误码 50101: "Request timestamp expired" (旧版或特定场景)
+                # OKX 错误码 50011: "Invalid Signature" (也可能由时间戳问题间接触发)
+                # 关键词: "timestamp", "expired", "invalid key", "time", "date", "signature"
+                if error_code == '50100' or error_code == '50101' or \
+                   ("timestamp" in l_error_msg or "expired" in l_error_msg or "time" in l_error_msg or "date" in l_error_msg) or \
+                   (error_code == '50011' and ("timestamp" in l_error_msg or "time" in l_error_msg)): # Invalid Signature 也可能与时间有关
+                    self.timestamp_error_detected = True
+                    self.logger.error("检测到OKX API时间戳错误或相关问题 (连接测试时)。请检查系统时间。")
+                    return False, f"连接测试失败: {error_msg} (错误码: {error_code} - 时间戳可能不同步，请检查系统时间)"
+                return False, f"连接测试失败: {error_msg} (错误码: {error_code})"
 
-        except Exception as e:
+        except Exception as e: # 通常SDK会捕获API异常并返回上述的 code/msg 结构
             self.logger.error(f"连接 OKX 时发生未知错误: {e}", exc_info=True)
+            # 未知错误也可能与时间戳有关，如果错误信息包含关键词
+            l_e_str = str(e).lower()
+            if "timestamp" in l_e_str or "expired" in l_e_str or "time" in l_e_str or "date" in l_e_str:
+                self.timestamp_error_detected = True
+                self.logger.error("检测到OKX API时间戳错误或相关问题 (连接时发生未知异常)。请检查系统时间。")
+                return False, f"未知连接错误: {e} (时间戳可能不同步，请检查系统时间)"
             return False, f"未知连接错误: {e}"
 
     def close(self):
@@ -85,13 +107,26 @@ class OKXAPI(BaseExchangeAPI):
                 ]
                 unique_coins = sorted(list(set(tradable_coins)))
                 self.logger.info(f"OKX: 获取到 {len(unique_coins)} 个可提币种。")
+                self.timestamp_error_detected = False # 获取成功，重置标志 (如果之前被其他错误调用设为True)
                 return unique_coins
             else:
                 error_msg = result.get('msg', '未能获取币种信息')
-                self.logger.error(f"获取OKX币种列表失败: {error_msg} (Code: {result.get('code')})")
+                error_code = result.get('code')
+                self.logger.error(f"获取OKX币种列表失败: {error_msg} (Code: {error_code})")
+                # 检查时间戳相关错误
+                l_error_msg = error_msg.lower()
+                if error_code == '50100' or error_code == '50101' or \
+                   ("timestamp" in l_error_msg or "expired" in l_error_msg or "time" in l_error_msg or "date" in l_error_msg) or \
+                   (error_code == '50011' and ("timestamp" in l_error_msg or "time" in l_error_msg)):
+                    self.timestamp_error_detected = True
+                    self.logger.error("检测到OKX API时间戳错误或相关问题 (获取币种列表时)。请检查系统时间。")
                 return []
         except Exception as e:
             self.logger.error(f"获取OKX币种列表时发生未知错误: {e}", exc_info=True)
+            l_e_str = str(e).lower()
+            if "timestamp" in l_e_str or "expired" in l_e_str or "time" in l_e_str or "date" in l_e_str:
+                self.timestamp_error_detected = True
+                self.logger.error("检测到OKX API时间戳错误或相关问题 (获取币种列表时发生未知异常)。请检查系统时间。")
             return []
             
     def get_balance(self, asset: str) -> str | None:
