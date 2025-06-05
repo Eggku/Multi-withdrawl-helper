@@ -1,4 +1,4 @@
-import sys
+# 文件内容由于长度限制无法在此显示，请使用本地文件import sys
 import os
 import time
 import random
@@ -504,6 +504,7 @@ class WithdrawalHelper(QMainWindow):
         buttons = [
             ("历史记录", self.show_history),
             ("开始提币", self.start_withdrawal),
+            ("依次提币", self.start_sequential_withdrawal), # 新增按钮
             ("停止", self.stop_withdrawal),
             ("导入地址", self.import_address_list),
             ("验证地址", self.validate_addresses),
@@ -520,6 +521,8 @@ class WithdrawalHelper(QMainWindow):
                 btn.setEnabled(False)
             elif text == "开始提币":
                 self.start_button = btn
+            elif text == "依次提币": # 新增对依次提币按钮的引用
+                self.sequential_start_button = btn
             
             btn.clicked.connect(callback)
             toolbar_layout.addWidget(btn)
@@ -1688,8 +1691,9 @@ class WithdrawalHelper(QMainWindow):
         # 更新UI状态
         self.running = True
         self.start_button.setEnabled(False)
+        if hasattr(self, 'sequential_start_button'): self.sequential_start_button.setEnabled(False) # 禁用"依次提币"按钮
         self.stop_button.setEnabled(True)
-        self.log_message("提币流程已启动。", level="SUCCESS")
+        self.log_message("随机提币流程已启动。", level="SUCCESS") # 修改日志
         
         # 设置总行数
         self.total_rows = end_index - start_index + 1
@@ -1703,6 +1707,7 @@ class WithdrawalHelper(QMainWindow):
             self.log_message(f"内部错误：地址索引范围 [{thread_start_index}-{thread_end_index}] 无效。", level="CRITICAL")
             self.running = False
             self.start_button.setEnabled(True)
+            if hasattr(self, 'sequential_start_button'): self.sequential_start_button.setEnabled(True) # 确保两个按钮都恢复
             self.stop_button.setEnabled(False)
             return
 
@@ -1731,6 +1736,120 @@ class WithdrawalHelper(QMainWindow):
         )
         self.withdrawal_thread.start()
 
+    def start_sequential_withdrawal(self):
+        """处理工具栏 "依次提币" 按钮点击事件。
+           按顺序获取参数, 验证输入, 并启动后台提币线程。
+        """
+        self.logger.info(f"start_sequential_withdrawal 调用时提现间隔: min={self.min_interval}, max={self.max_interval}")
+        if self.running:
+            self.log_message("提币流程已经在运行中。", level="INFO")
+            QMessageBox.information(self, "提示", "提币流程已经在运行中。")
+            return
+
+        self.log_message("开始依次提币流程验证...", level="INFO")
+
+        # 1. 检查 API 连接 (与start_withdrawal一致)
+        if not self.current_exchange_api:
+            self.log_message("无法开始提币：API未连接。", level="WARNING")
+            QMessageBox.warning(self, "API错误", "交易所API未连接，请先选择交易所并确保API已配置连接。")
+            return
+            
+        # 2. 检查地址列表 (与start_withdrawal一致)
+        if not self.current_addresses:
+            self.log_message("无法开始提币：地址列表为空。", level="WARNING")
+            QMessageBox.warning(self, "无地址", "请先导入提币地址列表。")
+            return
+
+        # 3. 获取并验证界面参数 (与start_withdrawal一致)
+        try:
+            selected_coin = self.coin_combo.currentText()
+            selected_network = self.network_combo.currentText()
+            min_amount_str = self.min_amount_entry.text().strip()
+            max_amount_str = self.max_amount_entry.text().strip()
+            start_index_str = self.start_addr_entry.text().strip()
+            end_index_str = self.end_addr_entry.text().strip()
+
+            if not selected_coin:
+                raise ValueError("未选择提币币种")
+            if not selected_network:
+                raise ValueError("未选择提币网络")
+            
+            min_amount = Decimal(min_amount_str) if min_amount_str else Decimal('0')
+            max_amount = Decimal(max_amount_str) if max_amount_str else Decimal('0')
+            
+            if min_amount <= 0 or max_amount <= 0:
+                raise ValueError("提币数量必须大于0")
+            if min_amount > max_amount:
+                raise ValueError("最小数量不能大于最大数量")
+
+            start_index = int(start_index_str) if start_index_str else 1
+            end_index = int(end_index_str) if end_index_str else len(self.current_addresses)
+
+            if start_index < 1:
+                raise ValueError("起始序号必须大于等于1")
+            if end_index > len(self.current_addresses):
+                 raise ValueError(f"结束序号不能超过地址总数 ({len(self.current_addresses)})")
+            if start_index > end_index:
+                raise ValueError("起始序号不能大于结束序号")
+                
+        except ValueError as ve:
+            self.log_message(f"参数验证失败: {ve}", level="ERROR")
+            QMessageBox.warning(self, "参数错误", f"输入参数无效: {ve}")
+            return
+        except Exception as e:
+            self.log_message(f"获取或验证参数时发生未知错误: {e}", level="ERROR", exc_info=True)
+            QMessageBox.critical(self, "错误", f"处理参数时出错: {e}")
+            return
+
+        # 4. 确认参数并准备启动
+        self.log_message(f"参数验证通过: 币种={selected_coin}, 网络={selected_network}, "
+                         f"数量范围=[{min_amount}, {max_amount}], 地址范围=[{start_index}, {end_index}]", level="INFO")
+                         
+        # 更新UI状态
+        self.running = True
+        self.start_button.setEnabled(False)       # 禁用"开始提币"按钮
+        if hasattr(self, 'sequential_start_button'): self.sequential_start_button.setEnabled(False) # 禁用"依次提币"按钮
+        self.stop_button.setEnabled(True)
+        self.log_message("依次提币流程已启动。", level="SUCCESS")
+        
+        # 设置总行数
+        self.total_rows = end_index - start_index + 1
+        
+        # 将地址序号调整为0-based index给线程使用
+        thread_start_index = start_index - 1 
+        thread_end_index = end_index - 1 # 包含结束索引
+        
+        # --- 提取待处理的地址列表 (不打乱) ---
+        if thread_start_index < 0 or thread_end_index >= len(self.current_addresses) or thread_start_index > thread_end_index:
+            self.log_message(f"内部错误：地址索引范围 [{thread_start_index}-{thread_end_index}] 无效。", level="CRITICAL")
+            self.running = False
+            self.start_button.setEnabled(True)       # 确保两个按钮都恢复
+            if hasattr(self, 'sequential_start_button'): self.sequential_start_button.setEnabled(True)
+            self.stop_button.setEnabled(False)
+            return
+
+        # 提取选定范围的地址 (不进行随机打乱)
+        selected_addresses_to_process = self.current_addresses[thread_start_index : thread_end_index + 1]
+        
+        self.log_message(f"已提取 {len(selected_addresses_to_process)} 个地址，将按文件顺序进行处理。", level="INFO")
+        # --- 结束地址提取 ---
+
+        # 创建并启动线程
+        self.withdrawal_thread = threading.Thread(
+            target=self._process_withdrawals,
+            args=(
+                selected_coin,
+                selected_network,
+                min_amount, 
+                max_amount,
+                selected_addresses_to_process, # 传递的是按顺序排列的列表
+                self.min_interval,
+                self.max_interval
+            ),
+            daemon=True
+        )
+        self.withdrawal_thread.start()
+
     def stop_withdrawal(self):
         """处理工具栏 "停止" 按钮点击事件."""
         if self.running:
@@ -1739,6 +1858,7 @@ class WithdrawalHelper(QMainWindow):
             # 以便实际的提币循环能够优雅地退出。
             self.log_message("用户请求停止提币流程。", level="INFO")
             if hasattr(self, 'start_button'): self.start_button.setEnabled(True)
+            if hasattr(self, 'sequential_start_button'): self.sequential_start_button.setEnabled(True) # 启用"依次提币"按钮
             if hasattr(self, 'stop_button'): self.stop_button.setEnabled(False)
             # 重置进度条和等待条 (虽然线程finally里也做了，这里再做一次确保UI更新)
             self.update_progress(0)  # Reset progress
@@ -2210,6 +2330,7 @@ class WithdrawalHelper(QMainWindow):
         self.logger.info("收到提币完成信号，更新UI状态。")
         self.running = False # 确保运行状态为False
         if hasattr(self, 'start_button'): self.start_button.setEnabled(True)
+        if hasattr(self, 'sequential_start_button'): self.sequential_start_button.setEnabled(True) # <-- 确保也启用顺序提币按钮
         if hasattr(self, 'stop_button'): self.stop_button.setEnabled(False)
         # 重置进度条和等待条 (虽然线程finally里也做了，这里再做一次确保UI更新)
         self.update_progress(0)  # Reset progress
